@@ -1,0 +1,16 @@
+# Malware samples and APKs: never commit
+samples/
+*.apk
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local data
+*.db
+reports/
