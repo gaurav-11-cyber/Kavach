@@ -1,6 +1,6 @@
 """Relationship graph between analysed APKs and the artifacts they share."""
 from urllib.parse import urlparse
-
+ 
 LEVEL_COLORS = {
     "LOW": "#c8e6c9", "MEDIUM": "#fff59d", "HIGH": "#ffcc80", "CRITICAL": "#ef9a9a",
 }
@@ -11,40 +11,43 @@ KIND_STYLE = {  # kind -> (shape, fill color)
     "Permissions": ("note", "#f5f5f5"),
 }
 ALL_KINDS = list(KIND_STYLE)
-
-
+ 
+ 
 def _esc(text):
     return str(text).replace("\\", "/").replace('"', "'")
-
-
-def artifacts_of(result):
+ 
+ 
+def artifacts_of(result, include_low=False):
     """Return {kind: set(names)} for one analysis result."""
     iocs = result.get("iocs", {})
     hosts = {urlparse(u).hostname for u in iocs.get("urls", []) if urlparse(u).hostname}
     return {
         "IoCs": hosts | set(iocs.get("ips", [])),
         "Libraries": {l["name"] for l in result.get("libraries", [])},
-        "MITRE techniques": {t["technique_id"] for t in result.get("mitre", [])},
+        "MITRE techniques": {
+            t["technique_id"] for t in result.get("mitre", [])
+            if include_low or t.get("confidence") != "low"
+        },
         "Permissions": {
             p["name"].replace("android.permission.", "")
             for p in result.get("permissions", []) if p.get("dangerous")
         },
     }
-
-
-def build_dot(items, kinds, only_shared=True):
+ 
+ 
+def build_dot(items, kinds, only_shared=True, include_low=False):
     """items: list of {"label", "score", "level", "result"}. Returns (dot, artifact_count)."""
-    per_apk = [(it, artifacts_of(it["result"])) for it in items]
-
+    per_apk = [(it, artifacts_of(it["result"], include_low)) for it in items]
+ 
     # which APKs use each artifact
     users = {}
     for idx, (_, arts) in enumerate(per_apk):
         for kind in kinds:
             for name in arts.get(kind, ()):
                 users.setdefault((kind, name), []).append(idx)
-
+ 
     chosen = {k: v for k, v in users.items() if not only_shared or len(v) >= 2}
-
+ 
     lines = ["graph G {", "rankdir=LR;", 'node [fontname="Helvetica", fontsize=10];']
     for idx, (it, _) in enumerate(per_apk):
         color = LEVEL_COLORS.get(it["level"], "#ffffff")
