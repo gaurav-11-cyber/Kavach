@@ -1,16 +1,18 @@
 """CLI entry point: python analyze.py path/to/app.apk"""
 from loguru import logger
 logger.remove()  # silence androguard debug logs
-
+ 
 import argparse
 import json
-
+ 
 from analyzer.manifest import (
     load_apk, get_basic_info, get_permissions, get_components,
 )
 from analyzer.iocs import extract_iocs
-
-
+from analyzer.certificate import analyze_certificates
+from analyzer.evasion import detect_evasion
+ 
+ 
 def analyze(path):
     apk = load_apk(path)
     return {
@@ -18,9 +20,11 @@ def analyze(path):
         "permissions": get_permissions(apk),
         "components": get_components(apk),
         "iocs": extract_iocs(apk),
+        "certificate": analyze_certificates(apk),
+        "evasion": detect_evasion(apk),
     }
-
-
+ 
+ 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Static APK analyzer")
     parser.add_argument("apk", help="path to APK file")
