@@ -2,35 +2,37 @@
 import math
 import re
  
-# (indicator id, category, severity, byte pattern, description)
+# (indicator id, category, severity, byte pattern, description, min distinct hits)
+# If fewer than min hits are found, severity drops to "low": one stray string
+# is common in legitimate apps and libraries.
 STRING_RULES = [
-    ("dynamic_code_loading", "dynamic_loading", "high",
+    ("dynamic_code_loading", "dynamic_loading", "medium",
      rb"DexClassLoader|InMemoryDexClassLoader|PathClassLoader",
-     "Loads additional code at runtime"),
-    ("reflection", "dynamic_loading", "low",
+     "Loads additional code at runtime", 1),
+    ("reflection", "dynamic_loading", "info",
      rb"Ljava/lang/reflect/Method;|Ljava/lang/Class;->forName",
-     "Uses reflection, often to hide API calls"),
-    ("shell_execution", "execution", "high",
+     "Uses reflection (very common, informational only)", 1),
+    ("shell_execution", "execution", "medium",
      rb"Ljava/lang/Runtime;->exec|Ljava/lang/ProcessBuilder;",
-     "Executes shell commands"),
+     "Executes shell commands", 1),
     ("anti_debugging", "anti_analysis", "high",
      rb"isDebuggerConnected|waitingForDebugger|TracerPid",
-     "Checks whether a debugger is attached"),
+     "Checks whether a debugger is attached", 2),
     ("emulator_detection", "anti_analysis", "high",
      rb"goldfish|ranchu|sdk_gphone|Genymotion|vbox86|qemu|generic_x86",
-     "Looks for emulator fingerprints"),
+     "Looks for several emulator fingerprints", 3),
     ("hooking_framework_detection", "anti_analysis", "medium",
      rb"frida|xposed|substrate|magisk",
-     "Looks for hooking or root frameworks"),
+     "Looks for several hooking or root frameworks", 3),
     ("root_detection", "anti_analysis", "low",
      rb"/system/bin/su|/system/xbin/su|com\.topjohnwu\.magisk",
-     "Checks for root access"),
-    ("native_code_loading", "dynamic_loading", "low",
+     "Checks for root access", 1),
+    ("native_code_loading", "dynamic_loading", "info",
      rb"Ljava/lang/System;->loadLibrary|Ljava/lang/System;->load",
-     "Loads native libraries"),
-    ("string_encoding", "obfuscation", "low",
+     "Loads native libraries (informational)", 1),
+    ("string_encoding", "obfuscation", "info",
      rb"Landroid/util/Base64;->decode",
-     "Decodes Base64 data at runtime"),
+     "Decodes Base64 data at runtime (informational)", 1),
 ]
  
 SHORT_CLASS_RE = re.compile(rb"L(?:[a-zA-Z]{1,2}/){1,3}[a-zA-Z]{1,2};")
@@ -41,6 +43,7 @@ SAFE_EXTENSIONS = (
     ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ogg", ".mp3", ".mp4",
     ".m4a", ".wav", ".ttf", ".otf", ".woff", ".woff2", ".zip", ".gz",
     ".kotlin_module", ".version", ".properties", ".xml", ".json", ".txt",
+    ".prof", ".profm", ".dm", ".arsc",
 )
  
  
@@ -56,13 +59,15 @@ def _entropy(data):
  
 def _scan_strings(dex_blobs):
     findings = []
-    for ind, category, severity, pattern, desc in STRING_RULES:
+    for ind, category, severity, pattern, desc, min_hits in STRING_RULES:
         rx = re.compile(pattern, re.IGNORECASE)
         hits = set()
         for dex in dex_blobs:
             for m in rx.findall(dex):
-                hits.add(m.decode("utf-8", "ignore"))
+                hits.add(m.decode("utf-8", "ignore").lower())
         if hits:
+            if len(hits) < min_hits and severity != "info":
+                severity = "low"
             findings.append({
                 "indicator": ind, "category": category, "severity": severity,
                 "description": desc, "evidence": sorted(hits)[:10],
@@ -93,7 +98,7 @@ def _scan_assets(apk):
         lower = name.lower()
         if not (lower.startswith("assets/") or lower.startswith("res/raw/")):
             continue
-        if lower.endswith(SAFE_EXTENSIONS):
+        if lower.endswith(SAFE_EXTENSIONS) or lower.startswith("assets/dexopt/"):
             continue
         try:
             data = apk.get_file(name)
@@ -120,4 +125,3 @@ def detect_evasion(apk):
         + _scan_obfuscation(dex_blobs)
         + _scan_assets(apk)
     )
- 
