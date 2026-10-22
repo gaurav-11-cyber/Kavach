@@ -11,18 +11,23 @@ from analyzer.manifest import (
 from analyzer.iocs import extract_iocs
 from analyzer.certificate import analyze_certificates
 from analyzer.evasion import detect_evasion
+from analyzer.libraries import detect_libraries
+from analyzer.scoring import score_apk
  
  
 def analyze(path):
     apk = load_apk(path)
-    return {
+    result = {
         "info": get_basic_info(apk),
         "permissions": get_permissions(apk),
         "components": get_components(apk),
         "iocs": extract_iocs(apk),
         "certificate": analyze_certificates(apk),
         "evasion": detect_evasion(apk),
+        "libraries": detect_libraries(apk),
     }
+    result["risk"] = score_apk(result)
+    return result
  
  
 if __name__ == "__main__":
