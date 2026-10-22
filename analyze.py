@@ -4,6 +4,7 @@ logger.remove()  # silence androguard debug logs
  
 import argparse
 import json
+import os
  
 from analyzer.manifest import (
     load_apk, get_basic_info, get_permissions, get_components,
