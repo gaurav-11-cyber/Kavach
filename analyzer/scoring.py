@@ -1,107 +1,141 @@
 """Explainable, rule-based risk scoring.
-
+ 
 Every point in the score comes from a named rule, so an analyst can see
-exactly why an APK was rated the way it was.
+exactly why an APK was rated the way it was. Each group of rules has a cap,
+so one noisy area cannot push a benign app to 100 on its own.
 """
-
-SEVERITY_POINTS = {"high": 20, "medium": 10, "low": 3}
-
+from urllib.parse import urlparse
+ 
+SEVERITY_POINTS = {"high": 20, "medium": 10, "low": 3, "info": 0}
+ 
+# max points each group of rules can contribute
+GROUP_CAPS = {
+    "permissions": 45, "exposure": 15, "ioc": 35,
+    "certificate": 20, "evasion": 50, "libraries": 9,
+}
+ 
 SMS_PERMS = {
     "android.permission.READ_SMS",
     "android.permission.SEND_SMS",
     "android.permission.RECEIVE_SMS",
 }
-
-
-def _add(breakdown, rule, points, reason, evidence=None):
-    if points > 0:
-        breakdown.append({
-            "rule": rule, "points": points, "reason": reason,
-            "evidence": evidence or [],
+COMMON_PERMS = {  # sensitive but normal in many apps: low weight
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.CAMERA",
+    "android.permission.ACCESS_FINE_LOCATION",
+}
+ 
+ 
+class _Board:
+    def __init__(self):
+        self.rows = []
+        self.used = {}
+ 
+    def add(self, group, rule, points, reason, evidence=None):
+        room = GROUP_CAPS[group] - self.used.get(group, 0)
+        points = min(points, room)
+        if points <= 0:
+            return
+        self.used[group] = self.used.get(group, 0) + points
+        self.rows.append({
+            "group": group, "rule": rule, "points": points,
+            "reason": reason, "evidence": evidence or [],
         })
-
-
+ 
+ 
 def _level(score):
-    if score >= 70:
+    if score >= 80:
         return "CRITICAL"
-    if score >= 40:
+    if score >= 60:
         return "HIGH"
-    if score >= 20:
+    if score >= 30:
         return "MEDIUM"
     return "LOW"
-
-
+ 
+ 
 def score_apk(result):
-    b = []
+    b = _Board()
     perms = {p["name"] for p in result.get("permissions", [])}
-    dangerous = sorted(p["name"] for p in result.get("permissions", []) if p["dangerous"])
-
+    dangerous = {p["name"] for p in result.get("permissions", []) if p["dangerous"]}
+ 
     # --- Permissions ---
     sms = sorted(perms & SMS_PERMS)
     if sms and "android.permission.INTERNET" in perms:
-        _add(b, "sms_with_network", 20,
-             "Can read or send SMS and has network access (possible SMS stealer)", sms)
+        b.add("permissions", "sms_with_network", 20,
+              "Can read or send SMS and has network access (possible SMS stealer)", sms)
     elif sms:
-        _add(b, "sms_access", 10, "Requests SMS permissions", sms)
+        b.add("permissions", "sms_access", 10, "Requests SMS permissions", sms)
     if "android.permission.BIND_ACCESSIBILITY_SERVICE" in perms:
-        _add(b, "accessibility_service", 20,
-             "Accessibility service access is often abused by banking trojans",
-             ["BIND_ACCESSIBILITY_SERVICE"])
+        b.add("permissions", "accessibility_service", 20,
+              "Accessibility service access is often abused by banking trojans",
+              ["BIND_ACCESSIBILITY_SERVICE"])
     if "android.permission.BIND_DEVICE_ADMIN" in perms:
-        _add(b, "device_admin", 20, "Requests device admin rights", ["BIND_DEVICE_ADMIN"])
+        b.add("permissions", "device_admin", 20, "Requests device admin rights",
+              ["BIND_DEVICE_ADMIN"])
     if "android.permission.SYSTEM_ALERT_WINDOW" in perms:
-        _add(b, "overlay", 10, "Can draw over other apps (overlay attacks)", ["SYSTEM_ALERT_WINDOW"])
+        b.add("permissions", "overlay", 5, "Can draw over other apps (overlay attacks)",
+              ["SYSTEM_ALERT_WINDOW"])
     if "android.permission.REQUEST_INSTALL_PACKAGES" in perms:
-        _add(b, "install_packages", 10, "Can request to install other apps",
-             ["REQUEST_INSTALL_PACKAGES"])
+        b.add("permissions", "install_packages", 10, "Can request to install other apps",
+              ["REQUEST_INSTALL_PACKAGES"])
     if "android.permission.RECEIVE_BOOT_COMPLETED" in perms:
-        _add(b, "persistence", 5, "Starts automatically after reboot", ["RECEIVE_BOOT_COMPLETED"])
-    special = {"android.permission.READ_SMS", "android.permission.SEND_SMS",
-               "android.permission.RECEIVE_SMS", "android.permission.BIND_ACCESSIBILITY_SERVICE",
-               "android.permission.BIND_DEVICE_ADMIN", "android.permission.SYSTEM_ALERT_WINDOW",
-               "android.permission.REQUEST_INSTALL_PACKAGES",
-               "android.permission.RECEIVE_BOOT_COMPLETED"}
-    other = [p for p in dangerous if p not in special]
-    _add(b, "dangerous_permissions", min(len(other) * 3, 15),
-         f"{len(other)} other sensitive permissions requested", other)
-
+        b.add("permissions", "persistence", 5, "Starts automatically after reboot",
+              ["RECEIVE_BOOT_COMPLETED"])
+    handled = SMS_PERMS | {
+        "android.permission.BIND_ACCESSIBILITY_SERVICE", "android.permission.BIND_DEVICE_ADMIN",
+        "android.permission.SYSTEM_ALERT_WINDOW", "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+    }
+    rest = sorted(dangerous - handled)
+    common = [p for p in rest if p in COMMON_PERMS]
+    unusual = [p for p in rest if p not in COMMON_PERMS]
+    b.add("permissions", "sensitive_permissions", len(unusual) * 3 + len(common) * 1,
+          f"{len(rest)} other sensitive permissions requested", rest)
+ 
     # --- Exposed components ---
     exposed = [c["name"] for c in result.get("components", [])
                if c["exported"] and not c["permission"] and c["type"] != "activity"]
-    _add(b, "exported_components", min(len(exposed) * 5, 15),
-         "Exported services, receivers or providers without a protecting permission", exposed)
-
-    # --- IoCs ---
+    b.add("exposure", "exported_components", len(exposed) * 5,
+          "Exported services, receivers or providers without a protecting permission", exposed)
+ 
+    # --- IoCs (bare domain strings are low confidence and not scored) ---
     iocs = result.get("iocs", {})
-    _add(b, "hardcoded_ips", min(len(iocs.get("ips", [])) * 10, 20),
-         "Hardcoded IP addresses in code", iocs.get("ips", []))
-    _add(b, "suspicious_domains", min(len(iocs.get("domains", [])) * 8, 24),
-         "Domains found in code that are not common platform domains", iocs.get("domains", []))
+    b.add("ioc", "hardcoded_public_ips", len(iocs.get("ips", [])) * 10,
+          "Hardcoded public IP addresses in code", iocs.get("ips", []))
+    hosts = sorted({urlparse(u).hostname for u in iocs.get("urls", []) if urlparse(u).hostname})
+    b.add("ioc", "external_hosts", len(hosts) * 8,
+          "Network hosts referenced by URLs in code that are not common platform domains", hosts)
     cleartext = [u for u in iocs.get("urls", []) if u.startswith("http://")]
-    _add(b, "cleartext_urls", min(len(cleartext) * 5, 10),
-         "Unencrypted HTTP URLs in code", cleartext)
-
+    b.add("ioc", "cleartext_urls", len(cleartext) * 5, "Unencrypted HTTP URLs in code", cleartext)
+ 
     # --- Certificate ---
     cert = result.get("certificate", {})
     certs = cert.get("certificates", [])
     if any(c.get("debug_certificate") for c in certs):
-        _add(b, "debug_certificate", 15, "Signed with an Android debug certificate")
+        b.add("certificate", "debug_certificate", 15, "Signed with an Android debug certificate")
     if any(c.get("expired") for c in certs):
-        _add(b, "expired_certificate", 5, "Signing certificate has expired")
+        b.add("certificate", "expired_certificate", 5, "Signing certificate has expired")
     if cert and not (cert.get("signed_v2") or cert.get("signed_v3")):
-        _add(b, "legacy_signing", 5, "Only signed with legacy v1 scheme")
+        b.add("certificate", "legacy_signing", 5, "Only signed with legacy v1 scheme")
     if cert and not certs:
-        _add(b, "unsigned", 10, "No signing certificate found")
-
+        b.add("certificate", "unsigned", 10, "No signing certificate found")
+ 
     # --- Evasion ---
+    found = {f["indicator"] for f in result.get("evasion", [])}
     for f in result.get("evasion", []):
-        _add(b, f["indicator"], SEVERITY_POINTS.get(f["severity"], 0),
-             f["description"], f.get("evidence", []))
-
+        b.add("evasion", f["indicator"], SEVERITY_POINTS.get(f["severity"], 0),
+              f["description"], f.get("evidence", []))
+    if "dynamic_code_loading" in found and "encrypted_or_hidden_payload" in found:
+        b.add("evasion", "loader_with_hidden_payload", 20,
+              "Runtime code loading together with a hidden or encrypted payload")
+ 
     # --- Libraries ---
     ads = [l["name"] for l in result.get("libraries", []) if l["category"] == "ads_tracking"]
-    _add(b, "ad_tracking_sdks", min(len(ads) * 3, 9), "Ad or tracking SDKs included", ads)
+    b.add("libraries", "ad_tracking_sdks", len(ads) * 3, "Ad or tracking SDKs included", ads)
+ 
+    score = min(sum(x["points"] for x in b.rows), 100)
+    rows = sorted(b.rows, key=lambda x: -x["points"])
+    return {"score": score, "level": _level(score), "breakdown": rows}
 
-    score = min(sum(x["points"] for x in b), 100)
-    b.sort(key=lambda x: -x["points"])
-    return {"score": score, "level": _level(score), "breakdown": b}
+    
