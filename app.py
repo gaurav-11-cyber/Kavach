@@ -8,6 +8,7 @@ import streamlit as st
  
 from analyze import analyze
 from analyzer import storage
+from analyzer.graph import ALL_KINDS, build_dot
  
 st.set_page_config(page_title="APKScope", layout="wide")
 st.title("APKScope")
@@ -34,7 +35,7 @@ with st.sidebar:
                 os.unlink(path)
  
 rows = storage.list_results()
-tab_report, tab_compare = st.tabs(["Report", "Compare"])
+tab_report, tab_compare, tab_graph = st.tabs(["Report", "Compare", "Relationships"])
  
 # ---------- report tab ----------
 with tab_report:
@@ -134,3 +135,27 @@ with tab_compare:
         st.bar_chart(df.set_index("file")["score"])
         st.dataframe(df.sort_values("score", ascending=False),
                      width="stretch", hide_index=True)
+ 
+# ---------- relationships tab ----------
+with tab_graph:
+    st.write("APKs and the indicators, libraries, techniques or permissions they have in common.")
+    kinds = st.multiselect("Show", ALL_KINDS, default=["IoCs", "Libraries", "MITRE techniques"])
+    only_shared = st.checkbox("Only items shared by 2 or more APKs", value=len(rows) >= 2)
+    items = []
+    for r in rows:
+        rec = storage.get_result(r["id"])
+        if rec is not None:
+            items.append({"label": r["filename"], "score": r["score"],
+                          "level": r["level"], "result": rec["result"]})
+    if not items:
+        st.info("No analyses yet.")
+    elif not kinds:
+        st.info("Pick at least one type to show.")
+    else:
+        dot, count = build_dot(items, kinds, only_shared)
+        if count == 0:
+            st.info("Nothing to draw for this selection. Try unticking 'Only items shared'.")
+        else:
+            st.graphviz_chart(dot)
+            st.caption(f"{len(items)} APKs, {count} shared items. "
+                       "Blue = IoCs, purple = libraries, orange = MITRE techniques.")
