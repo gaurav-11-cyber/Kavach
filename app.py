@@ -9,6 +9,7 @@ import streamlit as st
 from analyze import analyze
 from analyzer import storage
 from analyzer.graph import ALL_KINDS, build_dot
+from analyzer.yara_gen import generate_yara
  
 st.set_page_config(page_title="APKScope", layout="wide")
 st.title("APKScope")
@@ -70,16 +71,21 @@ with tab_report:
             st.write("No risk indicators were triggered.")
  
         st.subheader("MITRE ATT&CK for Mobile")
-        if res.get("mitre"):
+        show_low = st.checkbox("Include low-confidence techniques", value=False, key="mitre_low")
+        techniques = [t for t in res.get("mitre", []) if show_low or t["confidence"] != "low"]
+        hidden = len(res.get("mitre", [])) - len(techniques)
+        if techniques:
             st.dataframe(pd.DataFrame([
                 {"technique": t["technique_id"], "name": t["name"], "tactic": t["tactic"],
                  "confidence": t["confidence"], "evidence": ", ".join(map(str, t["evidence"][:4])),
                  "link": t["url"]}
-                for t in res["mitre"]
+                for t in techniques
             ]), width="stretch", hide_index=True,
                 column_config={"link": st.column_config.LinkColumn("link")})
         else:
-            st.write("No techniques mapped.")
+            st.write("No medium or high confidence techniques mapped.")
+        if hidden and not show_low:
+            st.caption(f"{hidden} low-confidence technique(s) hidden.")
  
         left, right = st.columns(2)
         with left:
@@ -110,6 +116,15 @@ with tab_report:
             with st.expander("Libraries"):
                 st.dataframe(pd.DataFrame(res["libraries"]), width="stretch",
                              hide_index=True)
+        with st.expander("YARA rule"):
+            rule = generate_yara(res, record["sha256"])
+            if rule is None:
+                st.write("No distinctive indicators found, so no YARA rule was generated.")
+            else:
+                st.code(rule, language="text")
+                st.download_button("Download rule", rule, file_name=f"{record['filename']}.yar")
+                st.caption("Scan the DEX code: unzip -p app.apk classes.dex > classes.dex, "
+                           "then run yara on classes.dex.")
         with st.expander("Raw JSON"):
             st.json(res)
  
@@ -141,6 +156,7 @@ with tab_graph:
     st.write("APKs and the indicators, libraries, techniques or permissions they have in common.")
     kinds = st.multiselect("Show", ALL_KINDS, default=["IoCs", "Libraries", "MITRE techniques"])
     only_shared = st.checkbox("Only items shared by 2 or more APKs", value=len(rows) >= 2)
+    include_low = st.checkbox("Include low-confidence MITRE techniques", value=False)
     items = []
     for r in rows:
         rec = storage.get_result(r["id"])
@@ -152,7 +168,7 @@ with tab_graph:
     elif not kinds:
         st.info("Pick at least one type to show.")
     else:
-        dot, count = build_dot(items, kinds, only_shared)
+        dot, count = build_dot(items, kinds, only_shared, include_low)
         if count == 0:
             st.info("Nothing to draw for this selection. Try unticking 'Only items shared'.")
         else:
