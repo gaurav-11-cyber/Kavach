@@ -1,3 +1,4 @@
+
 """SQLite storage for analysis results."""
 import json
 import os
@@ -26,7 +27,7 @@ def _conn():
     return conn
  
  
-def save_result(filename, sha256, result):
+def save_result(filename: str, sha256: str, result: dict[str, Any]) -> int:
     """Store a result. Re-analysing the same file (same hash) replaces the old one."""
     with _conn() as conn:
         conn.execute("DELETE FROM analyses WHERE sha256 = ?", (sha256,))
@@ -40,6 +41,7 @@ def save_result(filename, sha256, result):
                 json.dumps(result),
             ),
         )
+        assert cur.lastrowid is not None
         return cur.lastrowid
  
  
