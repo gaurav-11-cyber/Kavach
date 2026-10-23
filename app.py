@@ -2,19 +2,21 @@
 import hashlib
 import os
 import tempfile
- 
+
 import pandas as pd
 import streamlit as st
- 
+
 from analyze import analyze
 from analyzer import storage
 from analyzer.graph import ALL_KINDS, build_dot
+from analyzer.intel import lookup_hash
+from analyzer.report import build_pdf
 from analyzer.yara_gen import generate_yara
- 
+
 st.set_page_config(page_title="APKScope", layout="wide")
 st.title("APKScope")
 st.caption("Android APK triage: static analysis, explainable risk score, MITRE ATT&CK mapping")
- 
+
 # ---------- sidebar: upload and analyze ----------
 with st.sidebar:
     st.header("Analyze")
@@ -34,10 +36,14 @@ with st.sidebar:
                 st.error(f"{f.name}: could not analyze ({exc})")
             finally:
                 os.unlink(path)
- 
+
+def _run_lookup(sha256: str) -> None:
+    st.session_state[f"intel_{sha256}"] = lookup_hash(sha256)
+
+
 rows = storage.list_results()
 tab_report, tab_compare, tab_graph = st.tabs(["Report", "Compare", "Relationships"])
- 
+
 # ---------- report tab ----------
 with tab_report:
     if not rows:
@@ -51,7 +57,7 @@ with tab_report:
             st.stop()
         res = record["result"]
         risk = res["risk"]
- 
+
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Risk score", f"{risk['score']} / 100")
         c2.metric("Level", risk["level"])
@@ -59,7 +65,12 @@ with tab_report:
         c4.metric("Version", res["info"].get("version") or "-")
         st.progress(min(risk["score"], 100) / 100)
         st.caption(f"SHA-256: {record['sha256']}")
- 
+        intel_key = f"intel_{record['sha256']}"
+        st.download_button(
+            "Download PDF report",
+            build_pdf(record["filename"], record["sha256"], res, st.session_state.get(intel_key)),
+            file_name=f"{record['filename']}.report.pdf", mime="application/pdf")
+
         st.subheader("Why this score")
         if risk["breakdown"]:
             st.dataframe(pd.DataFrame([
@@ -69,7 +80,7 @@ with tab_report:
             ]), width="stretch", hide_index=True)
         else:
             st.write("No risk indicators were triggered.")
- 
+
         st.subheader("MITRE ATT&CK for Mobile")
         show_low = st.checkbox("Include low-confidence techniques", value=False, key="mitre_low")
         techniques = [t for t in res.get("mitre", []) if show_low or t["confidence"] != "low"]
@@ -86,7 +97,7 @@ with tab_report:
             st.write("No medium or high confidence techniques mapped.")
         if hidden and not show_low:
             st.caption(f"{hidden} low-confidence technique(s) hidden.")
- 
+
         left, right = st.columns(2)
         with left:
             with st.expander("Indicators of compromise", expanded=True):
@@ -116,6 +127,16 @@ with tab_report:
             with st.expander("Libraries"):
                 st.dataframe(pd.DataFrame(res["libraries"]), width="stretch",
                              hide_index=True)
+        with st.expander("Threat intelligence (hash lookup)"):
+            st.caption("Only the SHA-256 hash is sent, never the file. "
+                       "Needs VT_API_KEY and/or MB_AUTH_KEY in a .env file.")
+            st.button("Look up hash", key=f"lookup_{record['sha256']}",
+                      on_click=_run_lookup, args=(record["sha256"],))
+            for item in st.session_state.get(intel_key) or []:
+                line = f"**{item['source']}** ({item['status']}): {item['summary']}"
+                if item["link"]:
+                    line += f"  [open]({item['link']})"
+                st.markdown(line)
         with st.expander("YARA rule"):
             rule = generate_yara(res, record["sha256"])
             if rule is None:
@@ -127,7 +148,7 @@ with tab_report:
                            "then run yara on classes.dex.")
         with st.expander("Raw JSON"):
             st.json(res)
- 
+
 # ---------- compare tab ----------
 with tab_compare:
     if len(rows) < 2:
@@ -150,7 +171,7 @@ with tab_compare:
         st.bar_chart(df.set_index("file")["score"])
         st.dataframe(df.sort_values("score", ascending=False),
                      width="stretch", hide_index=True)
- 
+
 # ---------- relationships tab ----------
 with tab_graph:
     st.write("APKs and the indicators, libraries, techniques or permissions they have in common.")
