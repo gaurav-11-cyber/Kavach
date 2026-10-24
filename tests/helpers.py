@@ -63,3 +63,13 @@ def trojan_result() -> dict[str, Any]:
         ],
         "libraries": [],
     }
+
+
+def finish(result: dict[str, Any], package: str = "com.test") -> dict[str, Any]:
+    """Add info, risk and mitre to a raw result, like analyze() does."""
+    from analyzer.mitre import map_to_mitre
+    from analyzer.scoring import score_apk
+    result["info"] = {"package": package, "version": "1", "min_sdk": "21", "target_sdk": "33"}
+    result["risk"] = score_apk(result)
+    result["mitre"] = map_to_mitre(result)
+    return result
