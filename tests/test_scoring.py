@@ -107,3 +107,15 @@ def test_raw_public_ips_still_weigh_more_than_hosts():
     result["iocs"]["ips"] = ["185.220.101.4"]
     rows = {row["rule"]: row["points"] for row in score_apk(result)["breakdown"]}
     assert rows["hardcoded_public_ips"] == 10
+
+
+def test_a_minified_app_store_like_app_stays_low():
+    """Regression: appshelf (install permission, minified code, store hosts) scored MEDIUM (34)."""
+    result = clean_result()
+    result["permissions"] += [perm("REQUEST_INSTALL_PACKAGES"), perm("RECEIVE_BOOT_COMPLETED")]
+    result["iocs"]["urls"] = ["https://f-droid.org/a", "https://raw.githubusercontent.com/b",
+                              "https://www.rustore.ru/c"]
+    result["evasion"] = [{"indicator": "name_obfuscation", "severity": "low", "description": "d",
+                          "evidence": ["28%"]}]
+    r = score_apk(result)
+    assert r["level"] == "LOW" and r["score"] < 30

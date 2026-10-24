@@ -1,7 +1,7 @@
 """Evasion and obfuscation indicators found in DEX code and APK assets."""
 import math
 import re
- 
+
 # (indicator id, category, severity, byte pattern, description, min distinct hits)
 # If fewer than min hits are found, severity drops to "low": one stray string
 # is common in legitimate apps and libraries.
@@ -34,10 +34,10 @@ STRING_RULES = [
      rb"Landroid/util/Base64;->decode",
      "Decodes Base64 data at runtime (informational)", 1),
 ]
- 
+
 SHORT_CLASS_RE = re.compile(rb"L(?:[a-zA-Z]{1,2}/){1,3}[a-zA-Z]{1,2};")
 ALL_CLASS_RE = re.compile(rb"L[\w/$]{1,120};")
- 
+
 # File types that legitimately have high entropy
 SAFE_EXTENSIONS = (
     ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ogg", ".mp3", ".mp4",
@@ -45,8 +45,8 @@ SAFE_EXTENSIONS = (
     ".kotlin_module", ".version", ".properties", ".xml", ".json", ".txt",
     ".prof", ".profm", ".dm", ".arsc",
 )
- 
- 
+
+
 def _entropy(data):
     if not data:
         return 0.0
@@ -55,8 +55,8 @@ def _entropy(data):
         counts[b] += 1
     n = len(data)
     return -sum((c / n) * math.log2(c / n) for c in counts if c)
- 
- 
+
+
 def _scan_strings(dex_blobs):
     findings = []
     for ind, category, severity, pattern, desc, min_hits in STRING_RULES:
@@ -73,8 +73,8 @@ def _scan_strings(dex_blobs):
                 "description": desc, "evidence": sorted(hits)[:10],
             })
     return findings
- 
- 
+
+
 def _scan_obfuscation(dex_blobs):
     short = total = 0
     for dex in dex_blobs:
@@ -84,13 +84,14 @@ def _scan_obfuscation(dex_blobs):
     if total >= 100 and ratio > 0.25:
         return [{
             "indicator": "name_obfuscation", "category": "obfuscation",
-            "severity": "medium",
-            "description": "Many classes have very short names (minified or obfuscated)",
+            "severity": "low",
+            "description": "Many classes have very short names (minified or obfuscated). "
+                           "Normal for release builds, so only a weak signal on its own",
             "evidence": [f"{short} of {total} class names are 1-2 characters ({ratio:.0%})"],
         }]
     return []
- 
- 
+
+
 def _scan_assets(apk):
     findings = []
     suspicious = []
@@ -116,8 +117,8 @@ def _scan_assets(apk):
             "evidence": suspicious[:10],
         })
     return findings
- 
- 
+
+
 def detect_evasion(apk):
     dex_blobs = list(apk.get_all_dex())
     return (

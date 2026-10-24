@@ -54,6 +54,6 @@ def test_images_are_ignored():
 def test_name_obfuscation_needs_many_short_class_names():
     short = b" ".join(b"Lab/cd;" for _ in range(200))
     f = by_id(detect_evasion(FakeApk(dex=short)))
-    assert f["name_obfuscation"]["severity"] == "medium"
+    assert f["name_obfuscation"]["severity"] == "low"
     normal = b" ".join(b"Lcom/example/Thing%d;" % i for i in range(200))
     assert "name_obfuscation" not in by_id(detect_evasion(FakeApk(dex=normal)))
