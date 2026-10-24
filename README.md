@@ -1,4 +1,4 @@
-# APKScope
+# Kavach
 
 [![tests](https://github.com/gaurav-11-cyber/Cyber-Hackathon/actions/workflows/tests.yml/badge.svg)](https://github.com/gaurav-11-cyber/Cyber-Hackathon/actions/workflows/tests.yml)
 
@@ -6,8 +6,6 @@
 extracted indicators of compromise (IoCs), MITRE ATT&CK for Mobile mapping, correlated findings,
 a YARA rule, a PDF report, and an AI assistant that explains the findings in plain language.
 A dashboard compares several APKs side by side.
-
-> Built for hackathon problem statement **PS-02: Android Application Security and Forensic Analysis Platform**.
 
 ## How the AI is used
 
@@ -203,7 +201,7 @@ tests/               pytest suite (unit tests plus a full-pipeline test on sampl
 
 ## Handling malware samples safely
 
-APKScope never runs or installs an APK. It only reads the file. Even so, keep real malware in an
+Kavach never runs or installs an APK. It only reads the file. Even so, keep real malware in an
 isolated VM, with no shared folders or clipboard, and never install a sample on a phone or emulator.
 `samples/` and `*.apk` are git-ignored on purpose.
 
