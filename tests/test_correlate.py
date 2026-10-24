@@ -91,3 +91,12 @@ def test_unrelated_apks_have_no_overlap():
 def test_strong_links_are_listed_first():
     items = [_item("a", "p.a", ["x.ru"]), _item("b", "p.b", ["x.ru"]), _item("c", "p.c")]
     assert compare_apks(items)[0]["verdict"] == "strong link"
+
+
+def test_obfuscation_alone_is_not_correlated_but_with_a_loader_it_is():
+    r = clean_result()
+    r["evasion"] = [{"indicator": "name_obfuscation", "severity": "low", "description": "", "evidence": ["28%"]}]
+    assert "obfuscated_loader" not in ids(finish(r))
+    r["evasion"].append({"indicator": "dynamic_code_loading", "severity": "medium", "description": "",
+                         "evidence": ["dexclassloader"]})
+    assert "obfuscated_loader" in ids(finish(r))

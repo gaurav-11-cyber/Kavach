@@ -58,6 +58,14 @@ def correlate_findings(result: dict[str, Any]) -> list[dict[str, Any]]:
             "external hosts. This is the pattern of a staged payload.",
             evidence, ["T1407", "T1406", "T1437.001"])
 
+    obfuscated = evasion.get("name_obfuscation")
+    if obfuscated and loader:
+        add("obfuscated_loader", "Obfuscated code that also loads code at runtime", "medium",
+            "Short, obfuscated class names alone are common in release builds. Combined with runtime "
+            "code loading they make it harder to see what gets loaded.",
+            list(obfuscated.get("evidence", []))[:1] + list(loader.get("evidence", []))[:1],
+            ["T1406", "T1407"])
+
     takeover = sorted(perms & {"BIND_ACCESSIBILITY_SERVICE", "SYSTEM_ALERT_WINDOW",
                                "REQUEST_INSTALL_PACKAGES"})
     if "BIND_ACCESSIBILITY_SERVICE" in takeover and len(takeover) >= 2:
