@@ -7,7 +7,8 @@ import pandas as pd
 import streamlit as st
 
 from analyze import analyze
-from analyzer import storage
+from analyzer import ai, storage
+from analyzer.correlate import compare_apks, correlate_findings
 from analyzer.graph import ALL_KINDS, build_dot
 from analyzer.intel import lookup_hash
 from analyzer.report import build_pdf
@@ -42,7 +43,8 @@ def _run_lookup(sha256: str) -> None:
 
 
 rows = storage.list_results()
-tab_report, tab_compare, tab_graph = st.tabs(["Report", "Compare", "Relationships"])
+tab_report, tab_compare, tab_graph, tab_ai = st.tabs(
+    ["Report", "Compare", "Relationships", "AI Assistant"])
 
 # ---------- report tab ----------
 with tab_report:
@@ -68,7 +70,8 @@ with tab_report:
         intel_key = f"intel_{record['sha256']}"
         st.download_button(
             "Download PDF report",
-            build_pdf(record["filename"], record["sha256"], res, st.session_state.get(intel_key)),
+            build_pdf(record["filename"], record["sha256"], res, st.session_state.get(intel_key),
+                      st.session_state.get(f"ai_summary_{record['sha256']}")),
             file_name=f"{record['filename']}.report.pdf", mime="application/pdf")
 
         st.subheader("Why this score")
@@ -97,6 +100,16 @@ with tab_report:
             st.write("No medium or high confidence techniques mapped.")
         if hidden and not show_low:
             st.caption(f"{hidden} low-confidence technique(s) hidden.")
+
+        st.subheader("Correlated findings")
+        correlations = correlate_findings(res)
+        if correlations:
+            for c in correlations:
+                st.markdown(f"**{c['title']}** ({c['severity']})  \n{c['why']}  \n"
+                            f"Evidence: {', '.join(c['evidence'])}")
+        else:
+            st.write("No combined patterns found.")
+        st.caption("Correlations explain combinations of findings. They do not change the score.")
 
         left, right = st.columns(2)
         with left:
@@ -196,3 +209,88 @@ with tab_graph:
             st.graphviz_chart(dot)
             st.caption(f"{len(items)} APKs, {count} shared items. "
                        "Blue = IoCs, purple = libraries, orange = MITRE techniques.")
+
+    if len(items) >= 2:
+        st.subheader("Direct links and weak similarities")
+        pairs = compare_apks([{"label": it["label"], "result": it["result"]} for it in items])
+        st.dataframe(pd.DataFrame([
+            {"APK A": p["a"], "APK B": p["b"], "verdict": p["verdict"],
+             "direct evidence": "; ".join(p["strong"]) or "-",
+             "weak similarities": "; ".join(p["weak"]) or "-"}
+            for p in pairs
+        ]), width="stretch", hide_index=True)
+        st.caption("Weak similarities alone are not evidence of a shared origin.")
+        status = ai.ollama_status()
+        if st.button("Explain relationships with AI", disabled=not status["available"]):
+            try:
+                with st.spinner("Asking the local model..."):
+                    st.session_state["ai_links"] = ai.explain_links(pairs)
+            except ai.AIError as exc:
+                st.error(f"AI request failed: {exc}")
+        if not status["available"]:
+            st.caption(status["message"])
+        links = st.session_state.get("ai_links")
+        if links:
+            st.info(links["text"])
+            if links["unverified"]:
+                st.warning("Not found in the data (unverified): " + ", ".join(links["unverified"]))
+            st.caption("AI-generated. Verify against the evidence in the table.")
+
+# ---------- AI assistant tab ----------
+with tab_ai:
+    st.write("The assistant explains APKScope's findings in plain language. It runs on a local model, "
+             "so nothing leaves this machine. **It never changes the risk score**, and every identifier "
+             "in its answers is checked against the report.")
+    status = ai.ollama_status()
+    if not status["available"]:
+        st.info(f"{status['message']} Until then a rule-based summary is shown and the chat is off.")
+    if not rows:
+        st.info("No analyses yet. Upload an APK in the sidebar.")
+    else:
+        names = {r["id"]: r["filename"] for r in rows}
+        pick = st.selectbox("APK", list(names), format_func=lambda i: names[i], key="ai_apk")
+        rec = storage.get_result(pick)
+        if rec is None:
+            st.error("This analysis was not found in the database.")
+            st.stop()
+        a_res, sha = rec["result"], rec["sha256"]
+        a_corr = correlate_findings(a_res)
+
+        st.subheader("Investigation summary")
+        if st.button("Generate summary", type="primary", key=f"sum_{sha}"):
+            with st.spinner("Writing the summary..."):
+                st.session_state[f"ai_summary_{sha}"] = ai.summarize(a_res, a_corr)
+        summary = st.session_state.get(f"ai_summary_{sha}")
+        if summary:
+            if summary["source"] == "ai":
+                st.caption(f"AI-generated by {summary['model']}. Verify against the evidence.")
+            else:
+                st.caption("Rule-based summary (no AI model used). " + summary.get("note", ""))
+            st.write(summary["text"])
+            if summary["unverified"]:
+                st.warning("Not found in the report (unverified): " + ", ".join(summary["unverified"]))
+
+        st.subheader("Ask about this APK")
+        chat_key = f"chat_{sha}"
+        history = st.session_state.setdefault(chat_key, [])
+        cols = st.columns(3)
+        for col, text in zip(cols, ["Why is this APK rated this way?", "Which evidence is strongest?",
+                                    "What should I investigate next?"]):
+            if col.button(text, key=f"{text}_{sha}", disabled=not status["available"]):
+                st.session_state["pending_question"] = text
+        question = st.chat_input("Ask a question about this APK", disabled=not status["available"]) \
+            or st.session_state.pop("pending_question", None)
+        if question and status["available"]:
+            try:
+                with st.spinner("Thinking..."):
+                    answer = ai.ask(a_res, a_corr, question, history)
+                history.append({"role": "user", "content": question})
+                history.append({"role": "assistant", "content": answer["text"],
+                                "unverified": answer["unverified"]})
+            except ai.AIError as exc:
+                st.error(f"AI request failed: {exc}")
+        for turn in history:
+            with st.chat_message(turn["role"]):
+                st.write(turn["content"])
+                if turn.get("unverified"):
+                    st.warning("Not found in the report (unverified): " + ", ".join(turn["unverified"]))
