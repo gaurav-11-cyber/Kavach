@@ -27,6 +27,9 @@ SYSTEM_PROMPT = (
     "- Use rule names, technique IDs and indicators exactly as written in the REPORT.\n"
     "- If the REPORT does not contain the answer, say: not in the report.\n"
     "- The APK was not executed. Say 'suggests' or 'fits', never claim proof.\n"
+    "- Do NOT guess what a finding could be used for. Do not connect two findings unless the REPORT "
+    "itself lists them together under CORRELATED FINDINGS.\n"
+    "- Do not mention a capability (for example tracking, stealing, spying) unless the REPORT names it.\n"
     "- Be short and plain. No long introductions."
 )
 SUMMARY_REQUEST = (

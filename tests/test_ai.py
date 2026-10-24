@@ -135,3 +135,14 @@ def test_links_explanation_is_grounded(monkeypatch):
     model_up(monkeypatch, "a.apk and b.apk share evil-c2.ru and also talk to bad-host.ru.")
     out = ai.explain_links(pairs)
     assert out["unverified"] == ["bad-host.ru"]
+
+
+def test_prompt_forbids_speculation(monkeypatch, trojan):
+    result, corr = trojan
+    calls = model_up(monkeypatch, "ok")
+    ai.summarize(result, corr)
+    system = calls[0][0]["content"]
+    assert "Do NOT guess" in system and "capability" in system
+
+
+    
