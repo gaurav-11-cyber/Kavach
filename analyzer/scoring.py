@@ -1,19 +1,19 @@
 """Explainable, rule-based risk scoring.
- 
+
 Every point in the score comes from a named rule, so an analyst can see
 exactly why an APK was rated the way it was. Each group of rules has a cap,
 so one noisy area cannot push a benign app to 100 on its own.
 """
 from urllib.parse import urlparse
- 
+
 SEVERITY_POINTS = {"high": 20, "medium": 10, "low": 3, "info": 0}
- 
+
 # max points each group of rules can contribute
 GROUP_CAPS = {
     "permissions": 45, "exposure": 15, "ioc": 35,
     "certificate": 20, "evasion": 50, "libraries": 9,
 }
- 
+
 SMS_PERMS = {
     "android.permission.READ_SMS",
     "android.permission.SEND_SMS",
@@ -25,13 +25,13 @@ COMMON_PERMS = {  # sensitive but normal in many apps: low weight
     "android.permission.CAMERA",
     "android.permission.ACCESS_FINE_LOCATION",
 }
- 
- 
+
+
 class _Board:
     def __init__(self):
         self.rows = []
         self.used = {}
- 
+
     def add(self, group, rule, points, reason, evidence=None):
         room = GROUP_CAPS[group] - self.used.get(group, 0)
         points = min(points, room)
@@ -42,8 +42,8 @@ class _Board:
             "group": group, "rule": rule, "points": points,
             "reason": reason, "evidence": evidence or [],
         })
- 
- 
+
+
 def _level(score):
     if score >= 80:
         return "CRITICAL"
@@ -52,13 +52,13 @@ def _level(score):
     if score >= 30:
         return "MEDIUM"
     return "LOW"
- 
- 
+
+
 def score_apk(result):
     b = _Board()
     perms = {p["name"] for p in result.get("permissions", [])}
     dangerous = {p["name"] for p in result.get("permissions", []) if p["dangerous"]}
- 
+
     # --- Permissions ---
     sms = sorted(perms & SMS_PERMS)
     if sms and "android.permission.INTERNET" in perms:
@@ -92,23 +92,25 @@ def score_apk(result):
     unusual = [p for p in rest if p not in COMMON_PERMS]
     b.add("permissions", "sensitive_permissions", len(unusual) * 3 + len(common) * 1,
           f"{len(rest)} other sensitive permissions requested", rest)
- 
+
     # --- Exposed components ---
     exposed = [c["name"] for c in result.get("components", [])
                if c["exported"] and not c["permission"] and c["type"] != "activity"]
     b.add("exposure", "exported_components", len(exposed) * 5,
           "Exported services, receivers or providers without a protecting permission", exposed)
- 
+
     # --- IoCs (bare domain strings are low confidence and not scored) ---
     iocs = result.get("iocs", {})
     b.add("ioc", "hardcoded_public_ips", len(iocs.get("ips", [])) * 10,
           "Hardcoded public IP addresses in code", iocs.get("ips", []))
     hosts = sorted({urlparse(u).hostname for u in iocs.get("urls", []) if urlparse(u).hostname})
-    b.add("ioc", "external_hosts", len(hosts) * 8,
+    # Most apps mention a few web hosts (APIs, docs, repos), so hosts alone are only a weak signal.
+    # Raw public IPs and cleartext HTTP weigh more. Correlated findings and hash lookup cover the rest.
+    b.add("ioc", "external_hosts", min(len(hosts) * 3, 9),
           "Network hosts referenced by URLs in code that are not common platform domains", hosts)
     cleartext = [u for u in iocs.get("urls", []) if u.startswith("http://")]
     b.add("ioc", "cleartext_urls", len(cleartext) * 5, "Unencrypted HTTP URLs in code", cleartext)
- 
+
     # --- Certificate ---
     cert = result.get("certificate", {})
     certs = cert.get("certificates", [])
@@ -120,7 +122,7 @@ def score_apk(result):
         b.add("certificate", "legacy_signing", 5, "Only signed with legacy v1 scheme")
     if cert and not certs:
         b.add("certificate", "unsigned", 10, "No signing certificate found")
- 
+
     # --- Evasion ---
     found = {f["indicator"] for f in result.get("evasion", [])}
     for f in result.get("evasion", []):
@@ -129,13 +131,11 @@ def score_apk(result):
     if "dynamic_code_loading" in found and "encrypted_or_hidden_payload" in found:
         b.add("evasion", "loader_with_hidden_payload", 20,
               "Runtime code loading together with a hidden or encrypted payload")
- 
+
     # --- Libraries ---
     ads = [l["name"] for l in result.get("libraries", []) if l["category"] == "ads_tracking"]
     b.add("libraries", "ad_tracking_sdks", len(ads) * 3, "Ad or tracking SDKs included", ads)
- 
+
     score = min(sum(x["points"] for x in b.rows), 100)
     rows = sorted(b.rows, key=lambda x: -x["points"])
     return {"score": score, "level": _level(score), "breakdown": rows}
-
-    

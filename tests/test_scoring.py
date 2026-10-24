@@ -82,3 +82,28 @@ def test_unprotected_exported_service_is_counted():
     result["components"].append(
         {"type": "service", "name": "x.S", "exported": True, "permission": None})
     assert "exported_components" in rules(score_apk(result))
+
+
+def test_a_few_https_hosts_do_not_make_a_normal_app_risky():
+    """Regression: a chess app that mentions three web hosts scored MEDIUM (36)."""
+    result = clean_result()
+    result["permissions"].append(perm("ACCESS_FINE_LOCATION"))
+    result["iocs"]["urls"] = ["https://database.lichess.org/x", "https://git.skysparkle.cc/y",
+                              "https://iconbuddy.com/z"]
+    r = score_apk(result)
+    assert r["level"] == "LOW"
+    assert r["score"] < 15
+
+
+def test_hosts_add_at_most_nine_points():
+    result = clean_result()
+    result["iocs"]["urls"] = [f"https://host{i}.example.org/x" for i in range(20)]
+    host_rows = [row for row in score_apk(result)["breakdown"] if row["rule"] == "external_hosts"]
+    assert host_rows[0]["points"] == 9
+
+
+def test_raw_public_ips_still_weigh_more_than_hosts():
+    result = clean_result()
+    result["iocs"]["ips"] = ["185.220.101.4"]
+    rows = {row["rule"]: row["points"] for row in score_apk(result)["breakdown"]}
+    assert rows["hardcoded_public_ips"] == 10
