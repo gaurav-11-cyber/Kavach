@@ -3,30 +3,54 @@
 [![tests](https://github.com/gaurav-11-cyber/Cyber-Hackathon/actions/workflows/tests.yml/badge.svg)](https://github.com/gaurav-11-cyber/Cyber-Hackathon/actions/workflows/tests.yml)
 
 **Android APK triage for SOC analysts.** Upload a suspicious APK and get an explainable risk score,
-extracted indicators of compromise (IoCs), MITRE ATT&CK for Mobile mapping, a YARA rule, and a
-dashboard to compare several APKs side by side.
+extracted indicators of compromise (IoCs), MITRE ATT&CK for Mobile mapping, correlated findings,
+a YARA rule, a PDF report, and an AI assistant that explains the findings in plain language.
+A dashboard compares several APKs side by side.
 
 > Built for hackathon problem statement **PS-02: Android Application Security and Forensic Analysis Platform**.
 
+## How the AI is used
+
+The risk score and every finding come from **deterministic, transparent rules**. The AI never decides
+anything. It explains.
+
+- **Investigation assistant:** reads the structured findings and writes a short summary: why the APK
+  deserves attention, the strongest evidence, and what to check next.
+- **Copilot:** answers analyst questions ("Why is this rated high?", "What should I investigate next?")
+  using only the report.
+- **Multi-APK explanation:** explains direct links versus weak similarities between APKs.
+- **Runs locally.** It uses a local model through [Ollama](https://ollama.com), so no APK data leaves the machine.
+- **Grounding check.** Every identifier in an AI answer (rule name, MITRE technique, IP, host, permission,
+  score) is checked against the report. Anything that is not in the report is shown as **unverified**.
+- **Safe fallback.** If Ollama is not running, a rule-based summary is shown instead and the tool keeps working.
+- Every AI output is labelled as AI-generated and should be verified against the evidence.
+
 ## What it does
 
-| Area | What APKScope extracts |
+| Area | What APKScope provides |
 |---|---|
 | **Manifest** | Package info, permissions (sensitive ones flagged), exported activities / services / receivers / providers |
-| **IoCs** | URLs, public IP addresses and domains found in the DEX code, with noise filtering (see below) |
+| **IoCs** | URLs, public IP addresses and domains found in the DEX code, with noise filtering |
 | **Certificate** | Signing schemes (v1/v2/v3), issuer, validity, SHA-256, debug certificate, self-signed, expired |
 | **Evasion** | Runtime code loading, anti-debugging, emulator and hooking-framework checks, shell execution, name obfuscation, high-entropy hidden payloads |
 | **Libraries** | Third-party libraries detected from class packages, with a category (framework, network, analytics, ads/tracking) |
 | **Risk score** | 0-100 score where **every point comes from a named rule with evidence** |
 | **MITRE ATT&CK** | Findings mapped to ATT&CK for Mobile techniques, each with a confidence level |
-| **YARA** | A rule generated from the APK's IoCs and behaviour indicators (only when there is something distinctive) |
-| **Dashboard** | Streamlit app: per-APK report, multi-APK comparison, relationship graph of shared artifacts |
+| **Correlated findings** | Rules that spot combinations (for example SMS access plus external hosts, or runtime code loading plus a hidden payload) |
+| **YARA** | A rule generated from the APK's IoCs and behaviour indicators, only when there is something distinctive |
+| **PDF report** | Downloadable forensic report with score breakdown, MITRE, IoCs, correlations, YARA and the AI summary |
+| **Multi-APK** | Comparison table, relationship graph, and direct links versus weak similarities |
+| **Hash lookup** | Optional VirusTotal and MalwareBazaar lookup by SHA-256 (only the hash is sent) |
 
 ## Screenshots
 
 | Report | Compare | Relationships |
 |---|---|---|
 | ![Report](docs/report.png) | ![Compare](docs/compare.png) | ![Relationships](docs/relationships.png) |
+
+| AI Assistant | PDF report |
+|---|---|
+| ![AI Assistant](docs/ai.png) | ![PDF report](docs/pdf.png) |
 
 ## Quick start
 
@@ -54,6 +78,21 @@ streamlit run app.py
 Upload one or more APKs in the sidebar and click **Analyze**. Results are stored in a local SQLite
 file (`apkscope.db`), so earlier analyses stay available.
 
+**AI assistant (optional)**
+
+```bash
+ollama pull llama3.2:3b        # a small model that fits in 8 GB of RAM
+```
+
+Keep the Ollama app running, then open the **AI Assistant** tab. Use `OLLAMA_MODEL` to pick another model.
+Without Ollama, everything else works and the assistant shows a rule-based summary.
+
+**Hash lookup (optional)**
+
+```bash
+cp .env.example .env     # then add your free VT_API_KEY and/or MB_AUTH_KEY
+```
+
 **Tests**
 
 ```bash
@@ -80,7 +119,8 @@ Levels: **LOW** below 30, **MEDIUM** 30-59, **HIGH** 60-79, **CRITICAL** 80 and 
 
 Weak signals are handled carefully. A single emulator string or a single hooking-framework string
 is only a low-severity finding, because legitimate apps and libraries contain them. Reflection and
-native-library loading are shown as information and add no points.
+native-library loading are shown as information and add no points. Correlated findings are shown
+separately and do not change the score.
 
 ### Reducing false positives
 
@@ -125,7 +165,11 @@ analyzer/
   libraries.py       Third-party library detection
   scoring.py         Explainable risk scoring
   mitre.py           MITRE ATT&CK for Mobile mapping
+  correlate.py       Correlated findings and multi-APK comparison
+  ai.py              Local-model assistant with grounding check
   yara_gen.py        YARA rule generation
+  report.py          PDF report
+  intel.py           VirusTotal / MalwareBazaar hash lookup
   storage.py         SQLite storage
   graph.py           Relationship graph between APKs
 tests/               pytest suite (unit tests plus a full-pipeline test on samples/)
@@ -139,18 +183,23 @@ tests/               pytest suite (unit tests plus a full-pipeline test on sampl
 | Dynamic behavioural analysis | **Not implemented** |
 | Permission, API and evasion analysis | Done for permissions and evasion. API analysis is string-based, not a full call-graph |
 | Network, certificate and library analysis | Done. Libraries are identified, but not matched against known CVEs |
-| Threat intelligence and risk scoring | Explainable risk scoring and MITRE mapping done. **Online threat-intel lookups (VirusTotal etc.) are not implemented** |
-| Investigation dashboard | Done: report, multi-APK comparison, relationship graph. No PDF report export yet |
+| Threat intelligence and risk scoring | Explainable risk scoring and MITRE mapping done. Hash lookup is implemented and tested with mocked responses; it needs the user's own free API keys |
+| AI assistance | Local-model investigation assistant, copilot and multi-APK explanation, with a grounding check. No machine-learning classifier |
+| Investigation dashboard and reports | Done: report, multi-APK comparison, relationship graph, PDF report |
 
 ## Limitations
 
 - **Static analysis only.** Code that is encrypted, packed, or loaded at runtime cannot be fully inspected.
-- **Rule-based, not machine learning.** Scores and thresholds were tuned on a small set of clean apps
+- **The score is rule-based, not machine learning.** Rules and thresholds were tuned on a small set of clean apps
   and on synthetic test data. They have **not** been validated against a large set of real malware.
+- **The AI is a small local model.** It can still be wrong or vague. The grounding check catches invented
+  identifiers, but it cannot judge whether an explanation is good. Treat AI text as a draft for the analyst.
 - String-based detection can be evaded and can produce false positives. Treat the output as triage,
   not a verdict.
 - The generated YARA rules are tested against synthetic DEX data only.
 - Library detection relies on a built-in list of known package prefixes.
+- A hardcoded IP is only recognised when it is a whole string (or `ip:port`) in the code. A standalone version number such as `1.2.3.4` can still look like an IP. Plain web hosts carry little weight on their own, because most apps mention a few.
+- Hash lookup was tested with mocked API responses, and depends on the services' current API terms and limits.
 
 ## Handling malware samples safely
 
@@ -161,11 +210,10 @@ isolated VM, with no shared folders or clipboard, and never install a sample on 
 ## Roadmap
 
 - Dynamic analysis in an emulator (network and file activity)
-- Threat-intelligence enrichment by hash, domain and IP
-- PDF forensic report export
+- A machine-learning risk estimate, evaluated separately from the deterministic score
 - Validation on a larger set of known malware families
 - CVE matching for detected library versions
 
 ## Tech stack
 
-Python, Androguard, Streamlit, SQLite, YARA, pytest, GitHub Actions
+Python, Androguard, Streamlit, SQLite, YARA, ReportLab, Ollama (local LLM), pytest, GitHub Actions
