@@ -119,6 +119,12 @@ def build_context(result: dict[str, Any], correlations: list[dict[str, Any]]) ->
                      + ", ".join(c["evidence"]))
     if not correlations:
         lines.append("- none")
+    lines.append("API CAPABILITIES (static, from APIs referenced in the code):")
+    for cap in result.get("capabilities", []):
+        lines.append(f"- {cap['id']} ({cap['label']}, {cap['tier']}): {cap['status']}; APIs: "
+                     + ", ".join(cap["apis"][:3]))
+    if not result.get("capabilities"):
+        lines.append("- none")
     iocs = result.get("iocs", {})
     lines.append("NETWORK IOCS: " + (", ".join(iocs.get("urls", [])[:5] + iocs.get("ips", [])[:5]) or "none"))
     lines.append("EVASION: " + (", ".join(f"{e['indicator']} ({e['severity']})"
@@ -162,6 +168,8 @@ def report_tokens(result: dict[str, Any], correlations: list[dict[str, Any]]) ->
         known.add(p["name"].replace("android.permission.", ""))
     for c in correlations:
         known |= {c["id"]} | set(c["evidence"]) | set(c["mitre"])
+    for cap in result.get("capabilities", []):
+        known |= {cap["id"]} | set(cap["apis"])
     iocs = result.get("iocs", {})
     for key in ("urls", "ips", "domains"):
         known |= set(iocs.get(key, []))

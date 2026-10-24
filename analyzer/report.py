@@ -152,6 +152,19 @@ def build_pdf(filename: str, sha256: str, result: dict[str, Any],
     else:
         story.append(Paragraph("None found.", BODY))
 
+    # ---- API capabilities ----
+    caps = result.get("capabilities", [])
+    story.append(Paragraph("Behavioural capabilities (API usage)", H2))
+    if caps:
+        story.append(_table(["Capability", "Level", "Status", "APIs referenced"],
+                            [[c["label"], c["tier"], c["status"], _join(c["apis"], 4)] for c in caps],
+                            [44, 16, 40, 80]))
+        story.append(Paragraph("Static analysis shows what the code can do, not what it does at runtime. "
+                               "'Referenced only' means the permission is not declared, which usually "
+                               "points to unused library code.", SMALL))
+    else:
+        story.append(Paragraph("No sensitive API usage found.", BODY))
+
     # ---- certificate ----
     story.append(Paragraph("Signing certificate", H2))
     cert = result.get("certificate", {})

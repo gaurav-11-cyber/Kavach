@@ -119,6 +119,17 @@ with tab_report:
                     st.markdown(f"**{key}** ({len(vals)})")
                     if vals:
                         st.code("\n".join(vals))
+            with st.expander("Behavioural capabilities (API usage)", expanded=True):
+                if res.get("capabilities"):
+                    st.dataframe(pd.DataFrame([
+                        {"capability": c["label"], "level": c["tier"], "status": c["status"],
+                         "APIs": ", ".join(c["apis"][:3])}
+                        for c in res["capabilities"]
+                    ]), width="stretch", hide_index=True)
+                    st.caption("Static: shows what the code can do. 'referenced only' means the "
+                               "permission is not declared, usually unused library code.")
+                else:
+                    st.write("No sensitive API usage found.")
             with st.expander("Evasion indicators"):
                 if res["evasion"]:
                     st.dataframe(pd.DataFrame([
