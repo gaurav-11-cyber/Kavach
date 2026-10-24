@@ -11,6 +11,7 @@ from analyzer.manifest import (
     load_apk, get_basic_info, get_permissions, get_components,
 )
 from analyzer.iocs import extract_iocs
+from analyzer.capabilities import detect_capabilities
 from analyzer.certificate import analyze_certificates
 from analyzer.evasion import detect_evasion
 from analyzer.libraries import detect_libraries
@@ -30,6 +31,7 @@ def analyze(path: str) -> dict[str, Any]:
         "evasion": detect_evasion(apk),
         "libraries": detect_libraries(apk),
     }
+    result["capabilities"] = detect_capabilities(apk, result)
     result["risk"] = score_apk(result)
     result["mitre"] = map_to_mitre(result)
     result["correlations"] = correlate_findings(result)

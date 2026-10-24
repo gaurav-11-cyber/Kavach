@@ -1,12 +1,12 @@
 """Map findings to MITRE ATT&CK for Mobile techniques.
- 
+
 A mapping means "this behaviour or capability matches the technique", not
 "this technique was proven to be used". Confidence follows the strength of
 the evidence behind each finding.
 """
- 
+
 BASE_URL = "https://attack.mitre.org/techniques/"
- 
+
 # technique id -> (name, tactic)
 TECHNIQUES = {
     "T1407": ("Download New Code at Runtime", "Defense Evasion"),
@@ -28,8 +28,12 @@ TECHNIQUES = {
                   "Privilege Escalation"),
     "T1417.002": ("Input Capture: GUI Input Capture", "Credential Access"),
     "T1624.001": ("Event Triggered Execution: Broadcast Receivers", "Persistence"),
+    "T1414": ("Clipboard Data", "Collection"),
+    "T1517": ("Access Notifications", "Credential Access"),
+    "T1513": ("Screen Capture", "Collection"),
+    "T1426": ("System Information Discovery", "Discovery"),
 }
- 
+
 # evasion indicator id -> technique ids
 INDICATOR_MAP = {
     "dynamic_code_loading": ["T1407"],
@@ -41,7 +45,7 @@ INDICATOR_MAP = {
     "encrypted_or_hidden_payload": ["T1406"],
     "native_code_loading": ["T1575"],
 }
- 
+
 # permission -> technique ids
 PERMISSION_MAP = {
     "android.permission.READ_SMS": ["T1636.004"],
@@ -58,21 +62,21 @@ PERMISSION_MAP = {
     "android.permission.REQUEST_INSTALL_PACKAGES": ["T1544"],
     "android.permission.RECEIVE_BOOT_COMPLETED": ["T1624.001"],
 }
- 
+
 # permissions that are normal in many apps get "low" confidence
 COMMON = {
     "android.permission.CAMERA", "android.permission.ACCESS_FINE_LOCATION",
     "android.permission.RECEIVE_BOOT_COMPLETED", "android.permission.SYSTEM_ALERT_WINDOW",
 }
- 
- 
+
+
 def _url(tid):
     return BASE_URL + tid.replace(".", "/") + "/"
- 
- 
+
+
 def map_to_mitre(result):
     found = {}
- 
+
     def add(tid, source, evidence, confidence):
         name, tactic = TECHNIQUES[tid]
         entry = found.setdefault(tid, {
@@ -87,20 +91,27 @@ def map_to_mitre(result):
         for e in evidence:
             if e not in entry["evidence"]:
                 entry["evidence"].append(e)
- 
+
     for f in result.get("evasion", []):
         if f["severity"] == "info":
             continue
         for tid in INDICATOR_MAP.get(f["indicator"], []):
             add(tid, f"evasion:{f['indicator']}", f.get("evidence", []), f["severity"])
- 
+
     for p in result.get("permissions", []):
         for tid in PERMISSION_MAP.get(p["name"], []):
             conf = "low" if p["name"] in COMMON else "medium"
             add(tid, "permission", [p["name"].replace("android.permission.", "")], conf)
- 
+
+    for cap in result.get("capabilities", []):
+        strong = cap["status"] == "declared and used" and cap["tier"] == "high"
+        for tid in cap.get("mitre", []):
+            if tid in TECHNIQUES:
+                add(tid, f"api:{cap['id']}", cap["apis"][:3] or [cap["label"]],
+                    "medium" if strong else "low")
+
     iocs = result.get("iocs", {})
     if iocs.get("urls") or iocs.get("ips"):
         add("T1437.001", "network_iocs", (iocs.get("urls", []) + iocs.get("ips", []))[:5], "medium")
- 
+
     return sorted(found.values(), key=lambda x: (x["tactic"], x["technique_id"]))
