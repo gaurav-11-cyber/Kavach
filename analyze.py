@@ -1,12 +1,12 @@
 """CLI entry point: python analyze.py path/to/app.apk"""
 from loguru import logger
 logger.remove()  # silence androguard debug logs
- 
+
 import argparse
 import json
 import os
 from typing import Any
- 
+
 from analyzer.manifest import (
     load_apk, get_basic_info, get_permissions, get_components,
 )
@@ -15,9 +15,10 @@ from analyzer.certificate import analyze_certificates
 from analyzer.evasion import detect_evasion
 from analyzer.libraries import detect_libraries
 from analyzer.scoring import score_apk
+from analyzer.correlate import correlate_findings
 from analyzer.mitre import map_to_mitre
- 
- 
+
+
 def analyze(path: str) -> dict[str, Any]:
     apk = load_apk(path)
     result = {
@@ -31,9 +32,10 @@ def analyze(path: str) -> dict[str, Any]:
     }
     result["risk"] = score_apk(result)
     result["mitre"] = map_to_mitre(result)
+    result["correlations"] = correlate_findings(result)
     return result
- 
- 
+
+
 def print_summary(results):
     """Compact table: one row per APK."""
     print(f"{'APK':40} {'SCORE':>5}  {'LEVEL':8} TOP FINDINGS")
@@ -41,15 +43,15 @@ def print_summary(results):
         top = ", ".join(x["rule"] for x in r["risk"]["breakdown"][:3]) or "-"
         print(f"{os.path.basename(name)[:40]:40} {r['risk']['score']:>5}  "
               f"{r['risk']['level']:8} {top}")
- 
- 
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Static APK analyzer")
     parser.add_argument("apks", nargs="+", help="path(s) to APK file(s)")
     parser.add_argument("--summary", action="store_true",
                         help="print one summary row per APK instead of full JSON")
     args = parser.parse_args()
- 
+
     results = {path: analyze(path) for path in args.apks}
     if args.summary:
         print_summary(results)
