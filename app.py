@@ -15,7 +15,7 @@ from analyzer.report import build_pdf
 from analyzer.yara_gen import generate_yara
 
 st.set_page_config(page_title="APKScope", layout="wide")
-st.title("APKScope")
+st.title("Kavach")
 st.caption("Android APK triage: static analysis, explainable risk score, MITRE ATT&CK mapping")
 
 # ---------- sidebar: upload and analyze ----------
