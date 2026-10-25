@@ -25,7 +25,7 @@ def _yara_string(text):
 
 def _rule_name(package, sha256):
     safe = re.sub(r"[^A-Za-z0-9_]", "_", package or "apk")
-    return f"APKScope_{safe}_{sha256[:8]}"
+    return f"Kavach_{safe}_{sha256[:8]}"
 
 
 def generate_yara(result, sha256) -> Optional[str]:
@@ -49,7 +49,7 @@ def generate_yara(result, sha256) -> Optional[str]:
         f"rule {_rule_name(info.get('package'), sha256)}",
         "{",
         "    meta:",
-        '        author = "APKScope"',
+        '        author = "Kavach"',
         f'        description = "Indicators from {_yara_string(info.get("package") or "unknown")}"',
         f'        sample_sha256 = "{sha256}"',
         f'        risk_score = "{risk.get("score", 0)} ({risk.get("level", "n/a")})"',

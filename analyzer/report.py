@@ -56,7 +56,7 @@ def _footer(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(colors.grey)
-    canvas.drawString(15 * mm, 8 * mm, "APKScope static analysis report")
+    canvas.drawString(15 * mm, 8 * mm, "Kavach static analysis report")
     canvas.drawRightString(A4[0] - 15 * mm, 8 * mm, f"Page {doc.page}")
     canvas.restoreState()
 
@@ -69,7 +69,7 @@ def build_pdf(filename: str, sha256: str, result: dict[str, Any],
     story: list[Any] = []
 
     # ---- header ----
-    story.append(Paragraph("APKScope Forensic Report", _styles["Title"]))
+    story.append(Paragraph("Kavach Forensic Report", _styles["Title"]))
     story.append(Paragraph(f"<b>File:</b> {_t(filename)}", BODY))
     story.append(Paragraph(f"<b>SHA-256:</b> {_t(sha256)}", BODY))
     story.append(Paragraph(
@@ -228,6 +228,6 @@ def build_pdf(filename: str, sha256: str, result: dict[str, Any],
     buffer = BytesIO()
     SimpleDocTemplate(buffer, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm,
                       topMargin=15 * mm, bottomMargin=15 * mm,
-                      title=f"APKScope report - {filename}", author="APKScope"
+                      title=f"Kavach report - {filename}", author="Kavach"
                       ).build(story, onFirstPage=_footer, onLaterPages=_footer)
     return buffer.getvalue()

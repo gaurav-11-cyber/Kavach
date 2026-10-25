@@ -1,14 +1,13 @@
-
 """SQLite storage for analysis results."""
 import json
 import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Optional
- 
-DB_PATH = os.environ.get("APKSCOPE_DB", "apkscope.db")
- 
- 
+
+DB_PATH = os.environ.get("KAVACH_DB", "kavach.db")
+
+
 def _conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -25,8 +24,8 @@ def _conn():
         )"""
     )
     return conn
- 
- 
+
+
 def save_result(filename: str, sha256: str, result: dict[str, Any]) -> int:
     """Store a result. Re-analysing the same file (same hash) replaces the old one."""
     with _conn() as conn:
@@ -43,8 +42,8 @@ def save_result(filename: str, sha256: str, result: dict[str, Any]) -> int:
         )
         assert cur.lastrowid is not None
         return cur.lastrowid
- 
- 
+
+
 def list_results() -> list[dict[str, Any]]:
     with _conn() as conn:
         rows = conn.execute(
@@ -52,8 +51,8 @@ def list_results() -> list[dict[str, Any]]:
             "FROM analyses ORDER BY id DESC"
         ).fetchall()
     return [dict(r) for r in rows]
- 
- 
+
+
 def get_result(analysis_id: int) -> Optional[dict[str, Any]]:
     with _conn() as conn:
         row = conn.execute("SELECT * FROM analyses WHERE id = ?", (analysis_id,)).fetchone()

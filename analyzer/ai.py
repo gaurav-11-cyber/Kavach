@@ -1,4 +1,4 @@
-"""AI investigation assistant, grounded in APKScope's own findings.
+"""AI investigation assistant, grounded in Kavach's own findings.
 
 A local LLM (Ollama) explains the structured findings in plain language and
 answers analyst questions. It never changes the risk score. Every answer is
