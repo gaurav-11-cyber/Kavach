@@ -1,4 +1,4 @@
-"""APKScope dashboard. Run with: streamlit run app.py"""
+"""Kavach dashboard. Run with: streamlit run app.py"""
 import hashlib
 import os
 import tempfile
@@ -14,9 +14,9 @@ from analyzer.intel import lookup_hash
 from analyzer.report import build_pdf
 from analyzer.yara_gen import generate_yara
 
-st.set_page_config(page_title="APKScope", layout="wide")
+st.set_page_config(page_title="Kavach", page_icon="\U0001F6E1", layout="wide")
 st.title("Kavach")
-st.caption("Android APK triage: static analysis, explainable risk score, MITRE ATT&CK mapping")
+st.caption("Kavach (\u0915\u0935\u091a, armour): explainable Android APK triage for SOC and forensic teams")
 
 # ---------- sidebar: upload and analyze ----------
 with st.sidebar:
@@ -249,7 +249,7 @@ with tab_graph:
 
 # ---------- AI assistant tab ----------
 with tab_ai:
-    st.write("The assistant explains APKScope's findings in plain language. It runs on a local model, "
+    st.write("The assistant explains Kavach's findings in plain language. It runs on a local model, "
              "so nothing leaves this machine. **It never changes the risk score**, and every identifier "
              "in its answers is checked against the report.")
     status = ai.ollama_status()
