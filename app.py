@@ -37,6 +37,8 @@ with st.sidebar:
                 st.error(f"{f.name}: could not analyze ({exc})")
             finally:
                 os.unlink(path)
+        st.session_state["uploader_gen"] = st.session_state.get("uploader_gen", 0) + 1
+        st.rerun()
 
 def _run_lookup(sha256: str) -> None:
     st.session_state[f"intel_{sha256}"] = lookup_hash(sha256)
