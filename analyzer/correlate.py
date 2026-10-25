@@ -48,15 +48,21 @@ def correlate_findings(result: dict[str, Any]) -> list[dict[str, Any]]:
 
     loader = evasion.get("dynamic_code_loading")
     hidden = evasion.get("encrypted_or_hidden_payload")
-    if loader and (network or hidden):
+    raw_ips = sorted(set(result.get("iocs", {}).get("ips", [])))
+    if loader and (hidden or raw_ips):
         evidence = list(loader.get("evidence", []))[:2]
         if hidden:
             evidence += hidden.get("evidence", [])[:2]
-        evidence += network[:2]
-        add("staged_payload", "Runtime code loading with a hidden payload or external infrastructure",
-            "high", "The app loads code at runtime and also carries a hidden payload or references "
-            "external hosts. This is the pattern of a staged payload.",
-            evidence, ["T1407", "T1406", "T1437.001"])
+        evidence += raw_ips[:2]
+        add("staged_payload", "Runtime code loading with a hidden payload or a hardcoded IP", "high",
+            "The app loads code at runtime and also carries a hidden payload or a hardcoded public IP. "
+            "This is the pattern of a staged payload.", evidence, ["T1407", "T1406", "T1437.001"])
+    elif loader and network:
+        add("loader_with_external_hosts", "Runtime code loading and external hosts in the same app",
+            "medium", "The app can load code at runtime and refers to external hosts. This is common "
+            "when an ad or analytics SDK is included, so check what is loaded and from where before "
+            "drawing conclusions.",
+            list(loader.get("evidence", []))[:1] + network[:2], ["T1407", "T1437.001"])
 
     obfuscated = evasion.get("name_obfuscation")
     if obfuscated and loader:

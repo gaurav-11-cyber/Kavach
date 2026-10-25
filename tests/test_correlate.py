@@ -100,3 +100,22 @@ def test_obfuscation_alone_is_not_correlated_but_with_a_loader_it_is():
     r["evasion"].append({"indicator": "dynamic_code_loading", "severity": "medium", "description": "",
                          "evidence": ["dexclassloader"]})
     assert "obfuscated_loader" in ids(finish(r))
+
+
+def test_loader_with_only_web_hosts_is_medium_not_a_staged_payload():
+    """Regression: an ad SDK (loader) plus ad hosts was reported as a high-severity staged payload."""
+    r = clean_result()
+    r["evasion"] = [{"indicator": "dynamic_code_loading", "severity": "medium", "description": "",
+                     "evidence": ["dexclassloader"]}]
+    r["iocs"] = {"urls": ["https://googleads.g.example.org/x"], "ips": [], "domains": []}
+    found = {c["id"]: c for c in correlate_findings(finish(r))}
+    assert "staged_payload" not in found
+    assert found["loader_with_external_hosts"]["severity"] == "medium"
+
+
+def test_loader_with_a_hardcoded_ip_is_a_staged_payload():
+    r = clean_result()
+    r["evasion"] = [{"indicator": "dynamic_code_loading", "severity": "medium", "description": "",
+                     "evidence": ["dexclassloader"]}]
+    r["iocs"] = {"urls": [], "ips": ["185.220.101.4"], "domains": []}
+    assert "staged_payload" in ids(finish(r))
