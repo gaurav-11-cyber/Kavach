@@ -48,17 +48,14 @@ def build_dot(items, kinds, only_shared=True, include_low=False):
 
     chosen = {k: v for k, v in users.items() if not only_shared or len(v) >= 2}
 
-    lines = ["graph G {", "rankdir=TB;", "nodesep=0.4;", "ranksep=0.9;",
+    lines = ["graph G {", "rankdir=LR;", "nodesep=0.3;", "ranksep=1.1;",
              'node [fontname="Helvetica", fontsize=10];']
-    apk_ids = [f"a{idx}" for idx in range(len(per_apk))]
     for idx, (it, _) in enumerate(per_apk):
         color = LEVEL_COLORS.get(it["level"], "#ffffff")
         lines.append(
             f'a{idx} [label="{_esc(it["label"])}\\nscore {it["score"]} ({it["level"]})", '
             f'shape=box, style="filled,bold", fillcolor="{color}"];'
         )
-    if len(apk_ids) > 1:
-        lines.append("{rank=same; " + " ".join(apk_ids) + ";}")
     for n, ((kind, name), idxs) in enumerate(chosen.items()):
         shape, fill = KIND_STYLE[kind]
         lines.append(f'n{n} [label="{_esc(name)}", shape={shape}, style=filled, fillcolor="{fill}"];')
