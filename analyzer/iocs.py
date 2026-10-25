@@ -27,6 +27,11 @@ BENIGN_DOMAINS = {
     "kotlinlang.org", "xmlpull.org", "mozilla.org", "schema.org",
     "adobe.com", "xml.org", "jetbrains.com", "swmansion.com",
     "facebook.com", "microsoft.com", "oracle.com", "openssl.org",
+    # ad / analytics platforms
+    "doubleclick.net", "google-analytics.com", "googletagmanager.com",
+    "googlesyndication.com", "googleadservices.com",
+    # large public platforms (login and share buttons in SDKs)
+    "paypal.com", "twitter.com", "linkedin.com", "live.com", "yahoo.com",
 }
 
 # Java/Kotlin package fragments that look like domains
