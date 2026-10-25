@@ -1,44 +1,88 @@
+<div align="center">
+
 # Kavach
 
+### Explainable Android APK triage for SOC and forensic teams
+
+*Kavach (कवच) means armour.*
+
 [![tests](https://github.com/gaurav-11-cyber/Cyber-Hackathon/actions/workflows/tests.yml/badge.svg)](https://github.com/gaurav-11-cyber/Cyber-Hackathon/actions/workflows/tests.yml)
+![python](https://img.shields.io/badge/python-3.11%2B-blue)
+![ai](https://img.shields.io/badge/AI-runs%20locally-success)
+![apk](https://img.shields.io/badge/APK-never%20executed-informational)
+![ps](https://img.shields.io/badge/hackathon-PS--02-orange)
 
-**Android APK triage for SOC analysts.** Upload a suspicious APK and get an explainable risk score,
-extracted indicators of compromise (IoCs), MITRE ATT&CK for Mobile mapping, correlated findings,
-a YARA rule, a PDF report, and an AI assistant that explains the findings in plain language.
-A dashboard compares several APKs side by side.
+</div>
 
-## How the AI is used
+---
 
-The risk score and every finding come from **deterministic, transparent rules**. The AI never decides
-anything. It explains.
+## The problem
 
-- **Investigation assistant:** reads the structured findings and writes a short summary: why the APK
-  deserves attention, the strongest evidence, and what to check next.
-- **Copilot:** answers analyst questions ("Why is this rated high?", "What should I investigate next?")
-  using only the report.
-- **Multi-APK explanation:** explains direct links versus weak similarities between APKs.
-- **Runs locally.** It uses a local model through [Ollama](https://ollama.com), so no APK data leaves the machine.
-- **Grounding check.** Every identifier in an AI answer (rule name, MITRE technique, IP, host, permission,
-  score) is checked against the report. Anything that is not in the report is shown as **unverified**.
-- **Safe fallback.** If Ollama is not running, a rule-based summary is shown instead and the tool keeps working.
-- Every AI output is labelled as AI-generated and should be verified against the evidence.
+A suspicious APK lands on an analyst's desk. Obfuscation, runtime code loading, hidden payloads, anti-emulator
+checks and excessive permissions are all used to hide what it does, and the evidence is scattered across
+separate tools. The analyst has to run each tool, copy results around, and still decide which APK to look at first.
 
-## What it does
+## What Kavach does
 
-| Area | What APKScope provides |
+Drop in one or many APKs. Kavach reads each one **without ever running it** and gives the analyst:
+
+| You give | You get |
 |---|---|
-| **Manifest** | Package info, permissions (sensitive ones flagged), exported activities / services / receivers / providers |
-| **IoCs** | URLs, public IP addresses and domains found in the DEX code, with noise filtering |
-| **Certificate** | Signing schemes (v1/v2/v3), issuer, validity, SHA-256, debug certificate, self-signed, expired |
-| **Evasion** | Runtime code loading, anti-debugging, emulator and hooking-framework checks, shell execution, name obfuscation, high-entropy hidden payloads |
-| **Libraries** | Third-party libraries detected from class packages, with a category (framework, network, analytics, ads/tracking) |
-| **Risk score** | 0-100 score where **every point comes from a named rule with evidence** |
-| **MITRE ATT&CK** | Findings mapped to ATT&CK for Mobile techniques, each with a confidence level |
-| **Correlated findings** | Rules that spot combinations (for example SMS access plus external hosts, or runtime code loading plus a hidden payload) |
-| **YARA** | A rule generated from the APK's IoCs and behaviour indicators, only when there is something distinctive |
-| **PDF report** | Downloadable forensic report with score breakdown, MITRE, IoCs, correlations, YARA and the AI summary |
-| **Multi-APK** | Comparison table, relationship graph, and direct links versus weak similarities |
-| **Hash lookup** | Optional VirusTotal and MalwareBazaar lookup by SHA-256 (only the hash is sent) |
+| An APK (or several) | **Risk score from 0 to 100 where every point has a named rule and evidence** |
+| | IoCs: URLs, public IPs, hosts. Signing certificate and library analysis |
+| | Evasion findings: code loading, anti-debugging, anti-emulator, hidden payloads |
+| | **Behavioural capabilities** from sensitive API usage, checked against declared permissions |
+| | MITRE ATT&CK for Mobile mapping with a confidence level |
+| | **Correlated findings**: combinations that matter more than any single alert |
+| | Direct links versus weak similarities across APKs, and a relationship graph |
+| | A generated YARA rule, a PDF forensic report, and optional hash lookup |
+| | **An AI assistant** that explains all of it in plain language |
+
+## Why Kavach is different
+
+**1. Every point is explained.** The score is not a black box. Each rule that fires shows its points,
+its reason and its evidence. An analyst can disagree with a rule, but never wonder where a number came from.
+
+**2. The AI is not allowed to bluff.** A local language model writes the investigation summary and answers
+analyst questions, but it **never changes the score**, and every identifier in its answer (rule names, MITRE IDs,
+IPs, hosts, permissions, even the score itself) is checked against the real report. Anything the report does not
+contain is flagged **unverified** on screen. The model runs on the analyst's own machine, so no APK data leaves it.
+
+**3. Tuned on real apps, not just toy data.** Early versions flagged normal apps as risky. We tested on real
+apps, found the causes, fixed them and locked each fix in with a regression test (details below).
+
+**4. Honest about its limits.** What is not built, and what is not validated, is written down in this README.
+
+## How it works
+
+```mermaid
+flowchart LR
+    APK([APK file]) --> EXT
+    subgraph EXT [Static extraction - Androguard]
+        direction TB
+        M[Manifest and permissions]
+        D[DEX strings - IoCs and APIs]
+        C[Signing certificate]
+        E[Evasion and obfuscation]
+        L[Libraries]
+    end
+    EXT --> RULES
+    subgraph RULES [Deterministic rule engine]
+        direction TB
+        S[Explainable risk score]
+        T[MITRE ATT&CK mapping]
+        R[Correlated findings]
+        Y[YARA rules]
+    end
+    RULES --> DB[(SQLite)]
+    DB --> UI[Streamlit dashboard]
+    RULES --> LLM[Local LLM via Ollama]
+    LLM --> GC{Grounding check}
+    GC --> UI
+    UI --> PDF[PDF forensic report]
+```
+
+The deterministic engine decides. The AI only explains, and its words are verified against the engine's output.
 
 ## Screenshots
 
@@ -50,6 +94,36 @@ anything. It explains.
 |---|---|
 | ![AI Assistant](docs/ai.png) | ![PDF report](docs/pdf.png) |
 
+## See the score explained
+
+Real output from analysing **InsecureBankv2**, a deliberately vulnerable training app (not malware):
+
+```
+Risk score 56 / 100 - MEDIUM
+
+  +20  sms_with_network       SEND_SMS permission together with network access
+  +10  exported_components    MyBroadCastReceiver, TrackUserContentProvider (no protecting permission)
+  +10  dynamic_code_loading   DexClassLoader
+  + 8  sensitive_permissions  READ_CALL_LOG, READ_CONTACTS, storage
+  + 5  legacy_signing         only the legacy v1 signing scheme
+  + 3  ad_tracking_sdks       Google Ads
+```
+
+The score says how much analyst attention an APK deserves. It does not claim that an app is malicious.
+
+## The AI assistant
+
+| Feature | What it does |
+|---|---|
+| **Investigation summary** | Why the APK deserves attention, the strongest evidence, and what to check next |
+| **Copilot** | Answers questions such as "Why is this rated high?" using only the report |
+| **Multi-APK explanation** | Explains direct links versus weak similarities between APKs |
+| **Grounding check** | Flags any rule, technique, IP, host, permission or score in the answer that is not in the report |
+| **Safe fallback** | If the model is not running, a rule-based summary is shown and everything else keeps working |
+
+Every AI output is labelled as AI-generated. The prompt forbids guessing what a finding "could be used for".
+A small local model can still be vague or wrong, so treat its text as a draft for the analyst.
+
 ## Quick start
 
 ```bash
@@ -58,7 +132,13 @@ cd Cyber-Hackathon
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+streamlit run app.py
 ```
+
+Upload one or more APKs in the sidebar and press **Analyze**. Results are kept in a local SQLite file (`kavach.db`).
+
+<details>
+<summary><b>Command line, AI model, hash lookup and tests</b></summary>
 
 **Command line**
 
@@ -67,29 +147,22 @@ python analyze.py samples/app.apk                 # full JSON report
 python analyze.py samples/*.apk --summary         # one row per APK
 ```
 
-**Dashboard**
-
-```bash
-streamlit run app.py
-```
-
-Upload one or more APKs in the sidebar and click **Analyze**. Results are stored in a local SQLite
-file (`apkscope.db`), so earlier analyses stay available.
-
-**AI assistant (optional)**
+**AI assistant (optional, free, offline)**
 
 ```bash
 ollama pull llama3.2:3b        # a small model that fits in 8 GB of RAM
 ```
 
-Keep the Ollama app running, then open the **AI Assistant** tab. Use `OLLAMA_MODEL` to pick another model.
-Without Ollama, everything else works and the assistant shows a rule-based summary.
+Keep the Ollama app running and open the **AI Assistant** tab. Set `OLLAMA_MODEL` to use another model.
+Without Ollama, everything else works.
 
 **Hash lookup (optional)**
 
 ```bash
-cp .env.example .env     # then add your free VT_API_KEY and/or MB_AUTH_KEY
+cp .env.example .env     # add your own free VT_API_KEY and/or MB_AUTH_KEY
 ```
+
+Only the SHA-256 hash is ever sent, never the file.
 
 **Tests**
 
@@ -98,120 +171,101 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-## How the risk score works
+</details>
 
-The score is deterministic and rule-based, so an analyst can see exactly why an APK was rated the way
-it was. Each rule adds points and records its evidence. Rules are grouped, and each group has a cap so
-one noisy area cannot push a harmless app to 100.
+## PS-02 coverage
 
-| Group | Cap | Examples |
+| Requirement | Status | What is there |
 |---|---|---|
-| Permissions | 45 | SMS access with network, accessibility service, device admin, install packages |
-| Exposure | 15 | Exported services/receivers/providers without a protecting permission |
-| IoCs | 35 | Public IPs, external hosts in URLs, cleartext HTTP |
-| Certificate | 20 | Debug certificate, expired certificate, legacy-only signing |
-| Evasion | 50 | Code loading, emulator/hooking checks, hidden payloads |
-| Libraries | 9 | Ad and tracking SDKs |
+| Static, manifest and resource analysis | ✅ Done, resources partial | Manifest, permissions, exported components, DEX strings, asset files. Resource files are not analysed in depth |
+| Dynamic behavioural analysis | ❌ Not implemented | Planned. Kavach is a safe static triage tool first, and never executes a sample |
+| Permission, API and evasion analysis | ✅ Done | Permissions, API-usage capabilities checked against declared permissions, obfuscation, dynamic loading, anti-debugging, anti-emulation, hidden payloads |
+| Network, certificate and library analysis | ✅ Done, CVE matching missing | URLs, IPs, hosts, signing certificate, libraries. Library versions are not matched to known CVEs |
+| Threat intelligence and risk scoring | ⚠️ Partly | Explainable score and MITRE mapping are done. Hash lookup (VirusTotal, MalwareBazaar) is implemented and tested with mocked responses. Lookup of individual IoCs is not done |
+| Investigation dashboard and reports | ✅ Done | Multi-APK comparison, relationship graph, direct versus weak links, PDF forensic report with evidence, YARA export |
+| AI assistance | ✅ Done, no ML classifier | Local-model assistant with grounding check. The score is rule-based, not machine learning |
 
-Levels: **LOW** below 30, **MEDIUM** 30-59, **HIGH** 60-79, **CRITICAL** 80 and above.
+## Validation, and what we fixed along the way
 
-Weak signals are handled carefully. A single emulator string or a single hooking-framework string
-is only a low-severity finding, because legitimate apps and libraries contain them. Reflection and
-native-library loading are shown as information and add no points. Correlated findings are shown
-separately and do not change the score.
+Kavach was run on **9 real open-source apps** plus the InsecureBankv2 training app. Real apps exposed false
+positives, and each one became a fix and a regression test:
 
-### Reducing false positives
+| Found on a real app | Cause | Fix |
+|---|---|---|
+| A web browser scored 100 (CRITICAL), now 26 (LOW) | Noisy domains, private emulator IPs, single stray strings | URL host validation, public-IP only, evidence thresholds |
+| A chess app scored MEDIUM (36), now 10 (LOW) | Every web host it mentioned added points | Plain web hosts weigh little. Raw IPs and cleartext weigh more |
+| Fake "IP addresses" `3.5.7.7` and `5.38.8.97` | Numbers inside SVG icon path data | An IP counts only as a whole string or `ip:port` |
+| An app store scored MEDIUM | Minified code counted as obfuscation | Obfuscation alone is weak. It matters only together with runtime loading |
+| An ad SDK reported as a "staged payload" | Loader plus any web host | Needs a hidden payload or a hardcoded public IP |
 
-The scoring was recalibrated after a real browser APK scored 100 (CRITICAL) from noisy signals.
-After the fixes below it scores 26 (LOW):
+## Limitations
 
-- URLs must have a real hostname with a known TLD, or a public IP
-- Private and emulator IPs (for example `10.0.2.2`) are ignored
-- Java package names and common platform domains are not treated as domains
-- Bare domain strings are informational only and are not scored
-- ART baseline profiles are not treated as hidden payloads
-- Regression tests lock these cases in
+- **No dynamic analysis.** Code that is encrypted, packed, or loaded at runtime cannot be fully inspected.
+- **Not validated against real malware.** The rules and thresholds were tuned on clean apps, one deliberately
+  vulnerable app and synthetic test data. Detection of real malware families has not been measured.
+- **Rule-based score.** The thresholds are judgement, not a trained model.
+- **The AI is a small local model.** The grounding check catches invented identifiers, not weak reasoning.
+- **String-based detection can be evaded** and can produce false positives. Use the output for triage, not as a verdict.
+- A standalone version number such as `1.2.3.4` can still look like an IP address.
+- Generated YARA rules are tested on synthetic DEX data only. Hash lookup is tested with mocked responses.
 
-## MITRE ATT&CK mapping
+## Handling malware safely
 
-Findings are mapped to ATT&CK for Mobile techniques (for example T1407 Download New Code at Runtime,
-T1636.004 SMS Messages, T1453 Abuse Accessibility Features). A mapping means the behaviour or
-capability **matches** a technique. It is not proof that the technique was used. Each mapping carries
-a confidence level, and low-confidence mappings are hidden in the dashboard by default.
+Kavach reads files. It never runs or installs them. Even so, keep real malware samples in an isolated VM with no
+shared folders or clipboard, and never install a sample on a phone or emulator. `samples/` and `*.apk` are
+git-ignored on purpose.
 
-## YARA rules
+## Quality
 
-A rule is generated only from distinctive material: network IoCs, or at least three loader / anti-analysis
-strings together. Clean apps usually get no rule, on purpose. Rules target the DEX code, because an APK
-is a compressed zip and string matching on it does not work:
+- **110+ automated tests**, run on every push by GitHub Actions (green badge above)
+- Regression tests for every false positive listed in the validation table
+- The AI layer is tested with a mocked model, including hallucination detection
+- Type-checked, and verified from a fresh clone of this repository
 
-```bash
-unzip -p app.apk classes.dex > classes.dex
-yara rule.yar classes.dex
-```
-
-## Project structure
+<details>
+<summary><b>Project structure</b></summary>
 
 ```
 app.py               Streamlit dashboard
 analyze.py           Command-line entry point
 analyzer/
   manifest.py        Package info, permissions, exported components
-  iocs.py            URL / IP / domain extraction and filtering
+  iocs.py            URL / IP / host extraction and filtering
   certificate.py     Signing certificate analysis
   evasion.py         Evasion and obfuscation indicators
+  capabilities.py    Sensitive API usage versus declared permissions
   libraries.py       Third-party library detection
   scoring.py         Explainable risk scoring
   mitre.py           MITRE ATT&CK for Mobile mapping
   correlate.py       Correlated findings and multi-APK comparison
   ai.py              Local-model assistant with grounding check
   yara_gen.py        YARA rule generation
-  report.py          PDF report
+  report.py          PDF forensic report
   intel.py           VirusTotal / MalwareBazaar hash lookup
   storage.py         SQLite storage
   graph.py           Relationship graph between APKs
-tests/               pytest suite (unit tests plus a full-pipeline test on samples/)
+tests/               pytest suite
+scripts/             Fresh-clone verification
 ```
 
-## PS-02 coverage
-
-| Requirement | Status |
-|---|---|
-| Static, manifest and resource analysis | Done (manifest, permissions, exported components, DEX strings). Resource files are not analysed in depth |
-| Dynamic behavioural analysis | **Not implemented** |
-| Permission, API and evasion analysis | Done for permissions and evasion. API analysis is string-based, not a full call-graph |
-| Network, certificate and library analysis | Done. Libraries are identified, but not matched against known CVEs |
-| Threat intelligence and risk scoring | Explainable risk scoring and MITRE mapping done. Hash lookup is implemented and tested with mocked responses; it needs the user's own free API keys |
-| AI assistance | Local-model investigation assistant, copilot and multi-APK explanation, with a grounding check. No machine-learning classifier |
-| Investigation dashboard and reports | Done: report, multi-APK comparison, relationship graph, PDF report |
-
-## Limitations
-
-- **Static analysis only.** Code that is encrypted, packed, or loaded at runtime cannot be fully inspected.
-- **The score is rule-based, not machine learning.** Rules and thresholds were tuned on a small set of clean apps
-  and on synthetic test data. They have **not** been validated against a large set of real malware.
-- **The AI is a small local model.** It can still be wrong or vague. The grounding check catches invented
-  identifiers, but it cannot judge whether an explanation is good. Treat AI text as a draft for the analyst.
-- String-based detection can be evaded and can produce false positives. Treat the output as triage,
-  not a verdict.
-- The generated YARA rules are tested against synthetic DEX data only.
-- Library detection relies on a built-in list of known package prefixes.
-- A hardcoded IP is only recognised when it is a whole string (or `ip:port`) in the code. A standalone version number such as `1.2.3.4` can still look like an IP. Plain web hosts carry little weight on their own, because most apps mention a few.
-- Hash lookup was tested with mocked API responses, and depends on the services' current API terms and limits.
-
-## Handling malware samples safely
-
-Kavach never runs or installs an APK. It only reads the file. Even so, keep real malware in an
-isolated VM, with no shared folders or clipboard, and never install a sample on a phone or emulator.
-`samples/` and `*.apk` are git-ignored on purpose.
+</details>
 
 ## Roadmap
 
-- Dynamic analysis in an emulator (network and file activity)
-- A machine-learning risk estimate, evaluated separately from the deterministic score
-- Validation on a larger set of known malware families
-- CVE matching for detected library versions
+1. Dynamic analysis in an emulator (network and file activity)
+2. Threat-intelligence lookup for extracted domains and IPs
+3. CVE matching for detected library versions
+4. A machine-learning risk estimate, evaluated separately from the deterministic score
+5. Validation on known malware families
 
-## Tech stack
+## Built with
 
-Python, Androguard, Streamlit, SQLite, YARA, ReportLab, Ollama (local LLM), pytest, GitHub Actions
+Python · Androguard · Streamlit · SQLite · YARA · ReportLab · Ollama (local LLM) · pytest · GitHub Actions
+
+---
+
+<div align="center">
+
+Built by **Gaurav Raj** for hackathon problem statement **PS-02: AI-Assisted Android Application Security and Forensic Analysis Platform**
+
+</div>
