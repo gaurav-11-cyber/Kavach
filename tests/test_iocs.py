@@ -66,3 +66,9 @@ def test_ip_with_port_is_found_as_a_whole_string():
 
 def test_ip_inside_a_longer_string_is_not_counted():
     assert extract("connect to 185.220.101.4 now")["ips"] == []
+
+
+def test_well_known_ad_and_platform_hosts_are_dropped():
+    r = extract("https://googleads.g.doubleclick.net/mads/x.js", "http://www.google-analytics.com",
+                "https://www.paypal.com/login", "https://login.live.com/oauth")
+    assert r["urls"] == []
