@@ -1,6 +1,6 @@
 """Relationship graph between analysed APKs and the artifacts they share."""
 from urllib.parse import urlparse
- 
+
 LEVEL_COLORS = {
     "LOW": "#c8e6c9", "MEDIUM": "#fff59d", "HIGH": "#ffcc80", "CRITICAL": "#ef9a9a",
 }
@@ -11,12 +11,12 @@ KIND_STYLE = {  # kind -> (shape, fill color)
     "Permissions": ("note", "#f5f5f5"),
 }
 ALL_KINDS = list(KIND_STYLE)
- 
- 
+
+
 def _esc(text):
     return str(text).replace("\\", "/").replace('"', "'")
- 
- 
+
+
 def artifacts_of(result, include_low=False):
     """Return {kind: set(names)} for one analysis result."""
     iocs = result.get("iocs", {})
@@ -33,28 +33,32 @@ def artifacts_of(result, include_low=False):
             for p in result.get("permissions", []) if p.get("dangerous")
         },
     }
- 
- 
+
+
 def build_dot(items, kinds, only_shared=True, include_low=False):
     """items: list of {"label", "score", "level", "result"}. Returns (dot, artifact_count)."""
     per_apk = [(it, artifacts_of(it["result"], include_low)) for it in items]
- 
+
     # which APKs use each artifact
     users = {}
     for idx, (_, arts) in enumerate(per_apk):
         for kind in kinds:
             for name in arts.get(kind, ()):
                 users.setdefault((kind, name), []).append(idx)
- 
+
     chosen = {k: v for k, v in users.items() if not only_shared or len(v) >= 2}
- 
-    lines = ["graph G {", "rankdir=LR;", 'node [fontname="Helvetica", fontsize=10];']
+
+    lines = ["graph G {", "rankdir=TB;", "nodesep=0.4;", "ranksep=0.9;",
+             'node [fontname="Helvetica", fontsize=10];']
+    apk_ids = [f"a{idx}" for idx in range(len(per_apk))]
     for idx, (it, _) in enumerate(per_apk):
         color = LEVEL_COLORS.get(it["level"], "#ffffff")
         lines.append(
             f'a{idx} [label="{_esc(it["label"])}\\nscore {it["score"]} ({it["level"]})", '
             f'shape=box, style="filled,bold", fillcolor="{color}"];'
         )
+    if len(apk_ids) > 1:
+        lines.append("{rank=same; " + " ".join(apk_ids) + ";}")
     for n, ((kind, name), idxs) in enumerate(chosen.items()):
         shape, fill = KIND_STYLE[kind]
         lines.append(f'n{n} [label="{_esc(name)}", shape={shape}, style=filled, fillcolor="{fill}"];')
