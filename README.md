@@ -187,8 +187,24 @@ python -m pytest -q
 
 ## Validation, and what we fixed along the way
 
-Kavach was run on **9 real open-source apps** plus the InsecureBankv2 training app. Real apps exposed false
-positives, and each one became a fix and a regression test:
+Kavach was run on **9 real open-source apps** plus **InsecureBankv2**, a deliberately vulnerable banking app
+used to train security students (not malware). Final scores:
+
+| APK | Score | Level | Top findings |
+|---|---|---|---|
+| InsecureBankv2.apk (training app) | 51 | MEDIUM | SMS access with network, exported components, runtime code loading |
+| io.github.xtratter.appshelf | 27 | LOW | install permission, external hosts, persistence |
+| com.sweak.qralarm | 25 | LOW | exported components, external hosts, persistence |
+| de.clio.audiobook | 24 | LOW | exported components, external hosts |
+| cc.skysparkle.matewave | 10 | LOW | external hosts, sensitive permissions |
+| cube.run | 6 | LOW | external hosts, hooking-framework detection |
+| com.thomaspeoples.wraithodysseus | 6 | LOW | external hosts, hooking-framework detection |
+| com.cocode.linkqrwallet | 4 | LOW | external hosts, sensitive permissions |
+| com.marktka.calculatorYou | 3 | LOW | hooking-framework detection |
+
+Only the training app, which was built with intentionally exploitable components, scored above LOW. Every
+other real app stayed LOW. This is the result of several rounds of fixing false positives, each locked in
+with a regression test:
 
 | Found on a real app | Cause | Fix |
 |---|---|---|
